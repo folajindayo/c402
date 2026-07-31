@@ -1,0 +1,14 @@
+node_modules
+dist
+dist-tests
+cache
+out
+results
+.git
+.DS_Store
+flare-extension/scaffold/.git
+flare-extension/scaffold/cache
+flare-extension/scaffold/out
+flare-extension/scaffold/results
+flare-extension/scaffold/.env
+*.log

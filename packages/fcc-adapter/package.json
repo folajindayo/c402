@@ -1,0 +1,10 @@
+{
+  "name": "@c402/fcc-adapter",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "../../../dist/packages/fcc-adapter/src/index.js",
+  "types": "../../../dist/packages/fcc-adapter/src/index.d.ts",
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

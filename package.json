@@ -1,0 +1,30 @@
+{
+  "name": "c402",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "find apps packages tests -type d \\( -name dist -o -name .tsbuildinfo \\) -prune -exec rm -rf {} +",
+    "dev:api": "npm run dev -w @c402/api",
+    "dev:agent": "npm run dev -w @c402/agent-demo",
+    "dev:dashboard": "npm run dev -w @c402/dashboard",
+    "test": "npm run build && node --test dist-tests/**/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@x402/core": "^2.20.0",
+    "@x402/evm": "^2.20.0",
+    "@x402/fetch": "^2.20.0"
+  }
+}

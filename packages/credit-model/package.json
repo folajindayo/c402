@@ -1,0 +1,10 @@
+{
+  "name": "@c402/credit-model",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "../../../dist/packages/credit-model/src/index.js",
+  "types": "../../../dist/packages/credit-model/src/index.d.ts",
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

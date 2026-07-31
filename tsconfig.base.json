@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "sourceMap": true,
+    "rootDir": ".",
+    "paths": {
+      "@c402/protocol": ["./packages/protocol/src/index.ts"],
+      "@c402/credit-model": ["./packages/credit-model/src/index.ts"],
+      "@c402/fcc-adapter": ["./packages/fcc-adapter/src/index.ts"],
+      "@c402/server": ["./packages/server/src/index.ts"],
+      "@c402/client": ["./packages/client/src/index.ts"]
+    }
+  }
+}

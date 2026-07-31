@@ -1,0 +1,60 @@
+{
+  "network": "base-sepolia",
+  "chainId": 84532,
+  "rpcUrl": "https://sepolia.base.org",
+  "deployer": "0xD17fbeA515ecB5aA548aC26d0897B5bc1fcec984",
+  "erc8004": {
+    "identityRegistry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+    "reputationRegistry": "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+    "writer": {
+      "address": "0x319C508cb5b4ffd0e04b628e21B1399a4413C4e7",
+      "deployTx": "0x2ae4bdd3244ceea113cea8550cade1f8ea09d7da057950ed72d959230337825e"
+    },
+    "agent": {
+      "agentId": "8681",
+      "registerTx": "0x5a49bee2334e19b6d92f469b88d73b4b476de72c9a050db775268c6ea1ff38bd",
+      "agentRegistry": "eip155:84532:0x8004A818BFB912233c491871b3d84c89A494BD9e"
+    },
+    "feedback": {
+      "tag1": "c402-credit",
+      "tag2": "advance-repaid",
+      "value": "8",
+      "valueDecimals": 0,
+      "feedbackHash": "0xb80b57c805ec7b9ed32c2b5f64927052128a16cb7301ad16e83d32c4208f0e0c",
+      "submitTx": "0x2e468cf1e680817efa2eeac8ec3b995f91c86d3123b9ee1628601bd9af412b37",
+      "summaryReadback": {
+        "count": "1",
+        "summaryValue": "8",
+        "summaryValueDecimals": 0
+      }
+    }
+  },
+  "x402": {
+    "network": "eip155:84532",
+    "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    "assetSymbol": "USDC",
+    "assetDecimals": 6,
+    "payTo": "0x21b805BBC4bfFA7769868BF7f488D77b71756d3E",
+    "facilitatorUrl": "https://x402.org/facilitator",
+    "status": "settled",
+    "lastSuccessfulRun": {
+      "requestId": "0xab6effdfceeeb50d80f95bd968443a47",
+      "paymentId": "x402:0xab6effdfceeeb50d80f95bd968443a47:0xD17fbeA515ecB5aA548aC26d0897B5bc1fcec984",
+      "payer": "0xD17fbeA515ecB5aA548aC26d0897B5bc1fcec984",
+      "receiver": "0x21b805BBC4bfFA7769868BF7f488D77b71756d3E",
+      "amountAtomic": "1000",
+      "settlementTx": "0xffc0c635875c506b100c2b3fb720ee5ac4c42527fb726c25f59df61b87bba6a5",
+      "blockNumber": "0x2ac3932",
+      "transferLog": {
+        "from": "0xD17fbeA515ecB5aA548aC26d0897B5bc1fcec984",
+        "to": "0x21b805BBC4bfFA7769868BF7f488D77b71756d3E",
+        "value": "1000"
+      },
+      "balanceReadback": {
+        "payer": "19999000",
+        "receiver": "1000"
+      }
+    },
+    "previousFailure": "ERC20: transfer amount exceeds balance before Base Sepolia USDC was funded"
+  }
+}

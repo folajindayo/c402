@@ -1,0 +1,27 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    env_file:
+      - .env.production
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4021
+    ports:
+      - "4021:4021"
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    environment:
+      HOST: 0.0.0.0
+      DASHBOARD_PORT: 4022
+      C402_BASE_URL: ${C402_PUBLIC_URL:-http://localhost:4021}
+    ports:
+      - "4022:4022"
+    depends_on:
+      - api
+    restart: unless-stopped

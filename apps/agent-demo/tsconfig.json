@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "../../dist"
+  },
+  "references": [
+    { "path": "../../packages/client" },
+    { "path": "../../packages/credit-model" }
+  ],
+  "include": ["src/**/*.ts"]
+}

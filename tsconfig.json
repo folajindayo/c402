@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/protocol" },
+    { "path": "./packages/credit-model" },
+    { "path": "./packages/fcc-adapter" },
+    { "path": "./packages/server" },
+    { "path": "./packages/client" },
+    { "path": "./apps/api" },
+    { "path": "./apps/agent-demo" },
+    { "path": "./apps/dashboard" },
+    { "path": "./tests" }
+  ]
+}

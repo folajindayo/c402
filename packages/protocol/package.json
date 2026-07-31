@@ -1,0 +1,10 @@
+{
+  "name": "@c402/protocol",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "../../../dist/packages/protocol/src/index.js",
+  "types": "../../../dist/packages/protocol/src/index.d.ts",
+  "scripts": {
+    "build": "tsc -b"
+  }
+}
