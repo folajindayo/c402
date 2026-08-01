@@ -5,6 +5,7 @@ import { randomHex, signObject, verifyObjectSignature, objectWithoutSignature } 
 export type JobStatus = "funded" | "accepted" | "completed" | "failed" | "settled";
 export type CreditStatus = "offered" | "advanced" | "repaid" | "defaulted" | "cancelled";
 export type Purpose = "compute" | "data" | "storage" | "gas" | "approved-x402-service";
+export type CreditProductType = "job-backed" | "asset-backed" | "subscription-backed" | "earnings-backed";
 
 export interface SpendingPolicy {
   allowedUses: Purpose[];
@@ -36,6 +37,7 @@ export interface LenderMatch {
   lenderId: string;
   lenderAgent: string;
   score: number;
+  feeBps: number;
   amountAtomic: string;
   feeAtomic: string;
   supplier: string;
@@ -59,6 +61,21 @@ export interface FundedJob {
   createdAt: string;
 }
 
+export interface CreditBackingSource {
+  sourceId: string;
+  productType: Exclude<CreditProductType, "job-backed">;
+  agent: string;
+  asset: string;
+  network: string;
+  valueAtomic: string;
+  lockedAtomic: string;
+  advanceRateBps: number;
+  verifier: "ftso" | "fdc" | "x402" | "operator";
+  evidenceId: string;
+  status: "active" | "paused" | "exhausted";
+  updatedAt: string;
+}
+
 export interface CollateralPosition {
   jobId: string;
   pledgor: string;
@@ -70,6 +87,7 @@ export interface CollateralPosition {
 
 export interface CreditRequest {
   requestId: string;
+  productType: CreditProductType;
   agent: string;
   amountAtomic: string;
   purpose: Purpose;
@@ -84,6 +102,7 @@ export interface CreditRequest {
 export interface CreditOffer {
   offerId: string;
   requestId: string;
+  productType: CreditProductType;
   agent: string;
   approvedAmountAtomic: string;
   feeAtomic: string;
@@ -103,6 +122,7 @@ export interface CreditAdvance {
   amountAtomic: string;
   feeAtomic: string;
   collateralLockedAtomic: string;
+  backingLockedAtomic: string;
   deadline: string;
   status: CreditStatus;
   paidAt: string;
@@ -111,7 +131,8 @@ export interface CreditAdvance {
 
 export interface ReceivableLien {
   lienId: string;
-  jobId: string;
+  repaymentSource: string;
+  productType: CreditProductType;
   advanceId: string;
   lender: string;
   borrower: string;
@@ -125,7 +146,7 @@ export interface ReceivableLien {
 
 export interface RepaymentReceipt {
   repaymentId: string;
-  jobId: string;
+  repaymentSource: string;
   advanceId: string;
   escrowAmountAtomic: string;
   principalAtomic: string;
@@ -139,7 +160,7 @@ export interface RepaymentReceipt {
 
 export interface LiquidationReceipt {
   liquidationId: string;
-  jobId: string;
+  repaymentSource: string;
   advanceId: string;
   lender: string;
   collateralPaidAtomic: string;
@@ -177,6 +198,9 @@ export function createCreditRequest(input: Omit<CreditRequest, "requestId" | "cr
 }
 
 export function underwriteReceivable(job: FundedJob, request: CreditRequest, policy: SpendingPolicy): UnderwritingDecision {
+  if (request.productType !== "job-backed") {
+    return decline("request is not job-backed");
+  }
   if (job.status !== "funded" && job.status !== "accepted") {
     return decline("repayment source is not funded");
   }
@@ -193,8 +217,8 @@ export function underwriteReceivable(job: FundedJob, request: CreditRequest, pol
   const amount = parseAtomic(request.amountAtomic, "amountAtomic");
   const maxAdvance = parseAtomic(policy.maxAdvanceAtomic, "maxAdvanceAtomic");
   const receivable = parseAtomic(job.escrowAmountAtomic, "escrowAmountAtomic");
-  const fee = feeFor(amount);
-  const requiredRevenue = amount + fee;
+  const maximumFee = parseAtomic(request.maximumFeeAtomic, "maximumFeeAtomic");
+  const requiredRevenue = amount + maximumFee;
   const marginBps = Number(((receivable - requiredRevenue) * 10_000n) / receivable);
 
   if (amount > maxAdvance) return decline("request exceeds policy max advance");
@@ -211,19 +235,55 @@ export function underwriteReceivable(job: FundedJob, request: CreditRequest, pol
   };
 }
 
+export function underwriteBackingSource(source: CreditBackingSource, request: CreditRequest, policy: SpendingPolicy): UnderwritingDecision {
+  if (source.status !== "active") {
+    return decline("backing source is not active");
+  }
+  if (source.sourceId !== request.repaymentSource || source.agent !== request.agent || source.productType !== request.productType) {
+    return decline("backing source does not belong to request");
+  }
+  if (!policy.allowedUses.includes(request.purpose)) {
+    return decline("purpose is not allowed");
+  }
+  if (!policy.allowedDomains.includes(request.supplierDomain)) {
+    return decline("supplier domain is not allowed");
+  }
+
+  const amount = parseAtomic(request.amountAtomic, "amountAtomic");
+  const maxAdvance = parseAtomic(policy.maxAdvanceAtomic, "maxAdvanceAtomic");
+  const maximumFee = parseAtomic(request.maximumFeeAtomic, "maximumFeeAtomic");
+  const value = parseAtomic(source.valueAtomic, "valueAtomic");
+  const locked = parseAtomic(source.lockedAtomic, "lockedAtomic");
+  const available = ((value * BigInt(source.advanceRateBps)) / 10_000n) - locked;
+
+  if (amount > maxAdvance) return decline("request exceeds policy max advance");
+  if (amount + maximumFee > available) return decline("request exceeds verified backing capacity");
+
+  const utilizationBps = Number(((amount + maximumFee) * 10_000n) / (available || 1n));
+  return {
+    approved: true,
+    maximumCreditAtomic: available.toString(),
+    riskBand: utilizationBps <= 2500 ? "A" : utilizationBps <= 5000 ? "B" : utilizationBps <= 7500 ? "C" : "D",
+    maximumDurationSeconds: request.durationSeconds,
+    requiredRevenueSweepBps: request.productType === "asset-backed" ? 10_000 : 5000,
+    validUntil: Math.floor(Date.now() / 1000) + request.durationSeconds
+  };
+}
+
 export function createCreditOffer(
   request: CreditRequest,
   policy: SpendingPolicy,
   signerPrivateKeyPem: string
 ): CreditOffer {
-  const amount = parseAtomic(request.amountAtomic, "amountAtomic");
-  const fee = feeFor(amount);
+  parseAtomic(request.amountAtomic, "amountAtomic");
+  parseAtomic(request.maximumFeeAtomic, "maximumFeeAtomic");
   const unsigned = {
     offerId: randomHex(16),
     requestId: request.requestId,
+    productType: request.productType,
     agent: request.agent,
     approvedAmountAtomic: request.amountAtomic,
-    feeAtomic: fee.toString(),
+    feeAtomic: request.maximumFeeAtomic,
     repaymentSource: request.repaymentSource,
     expiresAt: new Date(Date.now() + request.durationSeconds * 1000).toISOString(),
     policyCommitment: commitment(policy)
@@ -253,41 +313,37 @@ export function scoreLenderForRequest(input: {
   if (input.request.durationSeconds > input.lender.maxDurationSeconds) return undefined;
 
   const amount = parseAtomic(input.offer.approvedAmountAtomic, "approvedAmountAtomic");
-  const fee = parseAtomic(input.offer.feeAtomic, "feeAtomic");
+  const fee = lenderFeeFor(amount, input.lender.minFeeBps);
   const liquidity = parseAtomic(input.lender.availableLiquidityAtomic, "availableLiquidityAtomic");
   const maximumFee = parseAtomic(input.request.maximumFeeAtomic, "maximumFeeAtomic");
   if (amount > liquidity) return undefined;
   if (fee > maximumFee) return undefined;
 
-  const feeBps = Number((fee * 10_000n) / amount);
-  if (feeBps < input.lender.minFeeBps) return undefined;
-
   const liquidityHeadroom = Number(((liquidity - amount) * 1_000n) / liquidity);
-  const feeFit = Math.max(0, 1_000 - Math.abs(input.lender.minFeeBps - feeBps));
   const riskScore = { A: 400, B: 300, C: 150, D: 0 }[input.decision.riskBand];
-  return input.lender.reputationScore * 10 + riskScore + feeFit + liquidityHeadroom;
+  return input.lender.reputationScore * 10 + riskScore + liquidityHeadroom;
 }
 
 export function createRepaymentReceipt(input: {
-  job: FundedJob;
+  repaymentSource: string;
+  grossRevenueAtomic: string;
   advance: CreditAdvance;
-  offer: CreditOffer;
   reserveBps: number;
   signerPrivateKeyPem: string;
 }): RepaymentReceipt {
-  const escrow = parseAtomic(input.job.escrowAmountAtomic, "escrowAmountAtomic");
-  const principal = parseAtomic(input.offer.approvedAmountAtomic, "approvedAmountAtomic");
-  const fee = parseAtomic(input.offer.feeAtomic, "feeAtomic");
+  const grossRevenue = parseAtomic(input.grossRevenueAtomic, "grossRevenueAtomic");
+  const principal = parseAtomic(input.advance.amountAtomic, "amountAtomic");
+  const fee = parseAtomic(input.advance.feeAtomic, "feeAtomic");
   const reserve = (fee * BigInt(input.reserveBps)) / 10_000n;
-  const agentProceeds = escrow - principal - fee;
+  const agentProceeds = grossRevenue - principal - fee;
   if (agentProceeds < 0n) {
-    throw new C402Error("insufficient_receivable", "escrow cannot cover principal and fee", 409);
+    throw new C402Error("insufficient_repayment_source", "repayment source cannot cover principal and fee", 409);
   }
   const unsigned = {
     repaymentId: randomHex(16),
-    jobId: input.job.jobId,
+    repaymentSource: input.repaymentSource,
     advanceId: input.advance.advanceId,
-    escrowAmountAtomic: escrow.toString(),
+    escrowAmountAtomic: grossRevenue.toString(),
     principalAtomic: principal.toString(),
     feeAtomic: fee.toString(),
     agentProceedsAtomic: agentProceeds.toString(),
@@ -299,7 +355,7 @@ export function createRepaymentReceipt(input: {
 }
 
 export function createLiquidationReceipt(input: {
-  jobId: string;
+  repaymentSource: string;
   advanceId: string;
   lender: string;
   collateralPaidAtomic: string;
@@ -309,7 +365,7 @@ export function createLiquidationReceipt(input: {
 }): LiquidationReceipt {
   const unsigned = {
     liquidationId: randomHex(16),
-    jobId: input.jobId,
+    repaymentSource: input.repaymentSource,
     advanceId: input.advanceId,
     lender: input.lender,
     collateralPaidAtomic: input.collateralPaidAtomic,
@@ -335,8 +391,11 @@ export function formatAtomic(value: string | bigint, decimals = 6): string {
   return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
-function feeFor(amount: bigint): bigint {
-  return (amount * 500n) / 10_000n;
+export function lenderFeeFor(amount: bigint, feeBps: number): bigint {
+  if (!Number.isSafeInteger(feeBps) || feeBps < 0 || feeBps > 10_000) {
+    throw new C402Error("invalid_lender_fee", "feeBps must be between 0 and 10000");
+  }
+  return (amount * BigInt(feeBps)) / 10_000n;
 }
 
 function decline(reason: string): UnderwritingDecision {

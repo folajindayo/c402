@@ -70,6 +70,14 @@ function render(apiBaseUrl: string): string {
     <div class="metric"><strong>Insurance Reserve</strong><span id="insuranceReserve">loading</span></div>
     <div class="metric"><strong>Funded Jobs</strong><span id="fundedJobs">loading</span></div>
     <div class="metric"><strong>Advances</strong><span id="advancesCount">loading</span></div>
+    <div class="metric"><strong>Backing Sources</strong><span id="backingSourceCount">loading</span></div>
+  </section>
+  <section class="panel" style="margin-top: 16px;">
+    <h2>Backing Sources</h2>
+    <table>
+      <thead><tr><th>Source</th><th>Type</th><th>Agent</th><th>Value</th><th>Locked</th><th>Verifier</th></tr></thead>
+      <tbody id="backingSources"><tr><td colspan="6">loading</td></tr></tbody>
+    </table>
   </section>
   <section class="panel" style="margin-top: 16px;">
     <h2>A2A Lender Market</h2>
@@ -88,7 +96,7 @@ function render(apiBaseUrl: string): string {
   <section class="panel" style="margin-top: 16px;">
     <h2>Liens & Collateral</h2>
     <table>
-      <thead><tr><th>Job</th><th>Lender</th><th>Claim</th><th>Collateral</th><th>Status</th></tr></thead>
+      <thead><tr><th>Source</th><th>Type</th><th>Lender</th><th>Claim</th><th>Collateral</th><th>Status</th></tr></thead>
       <tbody id="liens"><tr><td colspan="5">loading</td></tr></tbody>
     </table>
   </section>
@@ -151,6 +159,7 @@ async function refresh() {
   document.getElementById("insuranceReserve").textContent = credit.formatted.insuranceReserve;
   document.getElementById("fundedJobs").textContent = String((credit.jobs || []).length);
   document.getElementById("advancesCount").textContent = String((credit.advances || []).length);
+  document.getElementById("backingSourceCount").textContent = String((credit.backingSources || []).length);
   document.getElementById("creditJobs").innerHTML = (credit.jobs || []).map(job => {
     const request = (credit.requests || []).find(item => item.repaymentSource === job.jobId);
     const offer = request ? (credit.offers || []).find(item => item.requestId === request.requestId) : undefined;
@@ -158,9 +167,10 @@ async function refresh() {
     const repayment = advance ? (credit.repayments || []).find(item => item.advanceId === advance.advanceId) : undefined;
     return "<tr><td>" + job.jobId + "</td><td>" + job.status + "</td><td>" + money(job.escrowAmountAtomic) + " " + job.asset + "</td><td>" + (advance ? money(advance.amountAtomic) + " paid to " + advance.supplier : request ? "not advanced" : "") + "</td><td>" + (repayment ? money(repayment.principalAtomic) + " + " + money(repayment.feeAtomic) + " fee; agent " + money(repayment.agentProceedsAtomic) : "") + "</td></tr>";
   }).join("") || "<tr><td colspan='5'>No credit jobs yet</td></tr>";
+  document.getElementById("backingSources").innerHTML = (credit.backingSources || []).map(row => "<tr><td>" + row.sourceId + "</td><td>" + row.productType + "</td><td>" + row.agent + "</td><td>" + money(row.valueAtomic) + " " + row.asset + "</td><td>" + money(row.lockedAtomic) + "</td><td>" + row.verifier + "</td></tr>").join("") || "<tr><td colspan='6'>No backing sources yet</td></tr>";
   document.getElementById("lenders").innerHTML = (credit.lenders || []).map(row => "<tr><td>" + row.agent + "</td><td>" + money(row.availableLiquidityAtomic) + " " + row.asset + "</td><td>" + row.minFeeBps + " bps</td><td>" + row.allowedSupplierDomains.join(", ") + "</td><td>" + row.status + "</td></tr>").join("") || "<tr><td colspan='5'>No lender agents yet</td></tr>";
   document.getElementById("matches").innerHTML = (credit.matches || []).map(row => "<tr><td>" + row.matchId + "</td><td>" + row.lenderAgent + "</td><td>" + row.offerId + "</td><td>" + money(row.amountAtomic) + "</td><td>" + row.score + "</td></tr>").join("") || "<tr><td colspan='5'>No matches yet</td></tr>";
-  document.getElementById("liens").innerHTML = (credit.liens || []).map(row => "<tr><td>" + row.jobId + "</td><td>" + row.lender + "</td><td>" + money(row.seniorClaimAtomic) + "</td><td>" + money(row.collateralLockedAtomic) + "</td><td>" + row.status + "</td></tr>").join("") || "<tr><td colspan='5'>No liens yet</td></tr>";
+  document.getElementById("liens").innerHTML = (credit.liens || []).map(row => "<tr><td>" + row.repaymentSource + "</td><td>" + row.productType + "</td><td>" + row.lender + "</td><td>" + money(row.seniorClaimAtomic) + "</td><td>" + money(row.collateralLockedAtomic) + "</td><td>" + row.status + "</td></tr>").join("") || "<tr><td colspan='6'>No liens yet</td></tr>";
   document.getElementById("liquidations").innerHTML = (credit.liquidations || []).map(row => "<tr><td>" + row.advanceId + "</td><td>" + row.lender + "</td><td>" + money(row.collateralPaidAtomic) + "</td><td>" + money(row.reservePaidAtomic) + "</td><td>" + money(row.shortfallAtomic) + "</td></tr>").join("") || "<tr><td colspan='5'>No liquidations yet</td></tr>";
   document.getElementById("passport").innerHTML = (credit.passport || []).map(row => "<tr><td>" + row.agent + "</td><td>" + row.event + "</td><td>" + row.scoreDelta + "</td><td>" + money(row.creditLimitAtomic) + "</td><td>" + row.createdAt + "</td></tr>").join("") || "<tr><td colspan='5'>No passport events yet</td></tr>";
   document.getElementById("erc8004").innerHTML = (credit.erc8004Feedback || []).map(row => "<tr><td>" + row.agentId + "</td><td>" + row.tag1 + " / " + row.tag2 + "</td><td>" + row.value + "</td><td>" + row.feedbackHash + "</td></tr>").join("") || "<tr><td colspan='4'>No ERC-8004 signals yet</td></tr>";
@@ -177,11 +187,12 @@ async function getJsonAllowError(url) {
 }
 function showError(error) {
   const message = error instanceof Error ? error.message : String(error);
-  for (const id of ["tee", "codeHash", "mode", "lenderReceivables", "lenderAgents", "insuranceReserve", "fundedJobs", "advancesCount"]) {
+  for (const id of ["tee", "codeHash", "mode", "lenderReceivables", "lenderAgents", "insuranceReserve", "fundedJobs", "advancesCount", "backingSourceCount"]) {
     document.getElementById(id).textContent = "error";
   }
   document.getElementById("requests").innerHTML = "<tr><td colspan='5'>" + message + "</td></tr>";
   document.getElementById("creditJobs").innerHTML = "<tr><td colspan='5'>" + message + "</td></tr>";
+  document.getElementById("backingSources").innerHTML = "<tr><td colspan='6'>" + message + "</td></tr>";
   document.getElementById("lenders").innerHTML = "<tr><td colspan='5'>" + message + "</td></tr>";
   document.getElementById("matches").innerHTML = "<tr><td colspan='5'>" + message + "</td></tr>";
   document.getElementById("liens").innerHTML = "<tr><td colspan='5'>" + message + "</td></tr>";

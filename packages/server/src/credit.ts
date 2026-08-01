@@ -8,9 +8,11 @@ import {
   createRepaymentReceipt,
   formatAtomic,
   generateSigningKeyPair,
+  lenderFeeFor,
   parseAtomic,
   randomHex,
   scoreLenderForRequest,
+  underwriteBackingSource,
   underwriteReceivable,
   verifyCreditOffer,
   type AgentCreditPassportEvent,
@@ -18,6 +20,8 @@ import {
   type CreditOffer,
   type CreditRequest,
   type CollateralPosition,
+  type CreditBackingSource,
+  type CreditProductType,
   type Erc8004AgentRef,
   type Erc8004FeedbackSignal,
   type Erc8004ValidationRequest,
@@ -34,6 +38,7 @@ import {
 
 export interface CreditFlowState {
   jobs: FundedJob[];
+  backingSources: CreditBackingSource[];
   requests: CreditRequest[];
   offers: CreditOffer[];
   lenders: LenderProfile[];
@@ -60,6 +65,7 @@ export interface AgentCreditServiceOptions {
 export class AgentCreditService {
   private readonly signer = generateSigningKeyPair();
   private readonly jobs = new Map<string, FundedJob>();
+  private readonly backingSources = new Map<string, CreditBackingSource>();
   private readonly requests = new Map<string, CreditRequest>();
   private readonly offers = new Map<string, CreditOffer>();
   private readonly lenders = new Map<string, LenderProfile>();
@@ -109,6 +115,40 @@ export class AgentCreditService {
     return job;
   }
 
+  registerBackingSource(input: {
+    sourceId?: string;
+    productType: Exclude<CreditProductType, "job-backed">;
+    agent: string;
+    asset?: string;
+    network?: string;
+    valueAtomic: string;
+    advanceRateBps?: number;
+    verifier?: CreditBackingSource["verifier"];
+    evidenceId: string;
+  }): CreditBackingSource {
+    const sourceId = input.sourceId || `${input.productType}-${randomHex(8)}`;
+    const source: CreditBackingSource = {
+      sourceId,
+      productType: input.productType,
+      agent: input.agent,
+      asset: input.asset ?? this.options.asset ?? "USDC",
+      network: input.network ?? this.options.network ?? "eip155:84532",
+      valueAtomic: input.valueAtomic,
+      lockedAtomic: "0",
+      advanceRateBps: input.advanceRateBps ?? defaultAdvanceRate(input.productType),
+      verifier: input.verifier ?? defaultVerifier(input.productType),
+      evidenceId: input.evidenceId,
+      status: "active",
+      updatedAt: new Date().toISOString()
+    };
+    parseAtomic(source.valueAtomic, "valueAtomic");
+    if (source.advanceRateBps <= 0 || source.advanceRateBps > 10_000) {
+      throw new C402Error("invalid_advance_rate", "advanceRateBps must be between 1 and 10000", 400);
+    }
+    this.backingSources.set(sourceId, source);
+    return source;
+  }
+
   depositCollateral(input: { jobId: string; pledgor: string; amountAtomic: string }): CollateralPosition {
     const job = this.getJob(input.jobId);
     if (job.status !== "funded" && job.status !== "accepted") {
@@ -132,6 +172,7 @@ export class AgentCreditService {
 
   requestCredit(input: {
     agent: string;
+    productType?: CreditProductType;
     amountAtomic: string;
     purpose: Purpose;
     supplier: string;
@@ -142,12 +183,12 @@ export class AgentCreditService {
   }): { request: CreditRequest; decision: UnderwritingDecision; offer?: CreditOffer } {
     const request = createCreditRequest({
       ...input,
+      productType: input.productType ?? "job-backed",
       durationSeconds: input.durationSeconds ?? 3600
     });
     this.requests.set(request.requestId, request);
 
-    const job = this.getJob(request.repaymentSource);
-    const decision = underwriteReceivable(job, request, this.policy);
+    const decision = this.underwrite(request);
     if (!decision.approved) {
       return { request, decision };
     }
@@ -205,8 +246,7 @@ export class AgentCreditService {
     const offer = this.getOffer(offerId);
     verifyCreditOffer(offer, this.signer.publicKey);
     const request = this.getRequest(offer.requestId);
-    const job = this.getJob(request.repaymentSource);
-    const decision = underwriteReceivable(job, request, this.policy);
+    const decision = this.underwrite(request);
     if (!decision.approved) {
       return { offer, request, decision, eligibleLenders: 0 };
     }
@@ -224,7 +264,7 @@ export class AgentCreditService {
         })
       }))
       .filter((item): item is { lender: LenderProfile; score: number } => typeof item.score === "number")
-      .sort((a, b) => b.score - a.score || a.lender.minFeeBps - b.lender.minFeeBps);
+      .sort((a, b) => a.lender.minFeeBps - b.lender.minFeeBps || b.score - a.score);
 
     const selected = candidates[0];
     if (!selected) {
@@ -243,8 +283,9 @@ export class AgentCreditService {
       lenderId: selected.lender.lenderId,
       lenderAgent: selected.lender.agent,
       score: selected.score,
+      feeBps: selected.lender.minFeeBps,
       amountAtomic: offer.approvedAmountAtomic,
-      feeAtomic: offer.feeAtomic,
+      feeAtomic: lenderFeeFor(BigInt(offer.approvedAmountAtomic), selected.lender.minFeeBps).toString(),
       supplier: request.supplier,
       supplierDomain: request.supplierDomain,
       expiresAt: offer.expiresAt,
@@ -268,6 +309,7 @@ export class AgentCreditService {
     if (match && match.lenderAgent !== input.lender) {
       throw new C402Error("lender_mismatch", "supplier payment lender does not match the selected lender agent", 409);
     }
+    const feeAtomic = match?.feeAtomic ?? offer.feeAtomic;
     const advance: CreditAdvance = {
       advanceId: `adv-${offer.requestId}`,
       offerId: offer.offerId,
@@ -276,8 +318,9 @@ export class AgentCreditService {
       fundingSource: "direct-lender",
       supplier: request.supplier,
       amountAtomic: offer.approvedAmountAtomic,
-      feeAtomic: offer.feeAtomic,
+      feeAtomic,
       collateralLockedAtomic: this.lockCollateral(request.repaymentSource, offer.approvedAmountAtomic),
+      backingLockedAtomic: this.lockBackingSource(request),
       deadline: offer.expiresAt,
       status: "advanced",
       paidAt: new Date().toISOString(),
@@ -286,14 +329,15 @@ export class AgentCreditService {
     this.advances.set(advance.advanceId, advance);
     const lien: ReceivableLien = {
       lienId: `lien-${offer.requestId}`,
-      jobId: request.repaymentSource,
+      repaymentSource: request.repaymentSource,
+      productType: request.productType,
       advanceId: advance.advanceId,
       lender: input.lender,
       borrower: offer.agent,
       principalAtomic: offer.approvedAmountAtomic,
-      feeAtomic: offer.feeAtomic,
+      feeAtomic,
       collateralLockedAtomic: advance.collateralLockedAtomic,
-      seniorClaimAtomic: (BigInt(offer.approvedAmountAtomic) + BigInt(offer.feeAtomic)).toString(),
+      seniorClaimAtomic: (BigInt(offer.approvedAmountAtomic) + BigInt(feeAtomic)).toString(),
       status: "active",
       createdAt: new Date().toISOString()
     };
@@ -310,14 +354,26 @@ export class AgentCreditService {
 
   completeJob(jobId: string, advanceId: string): RepaymentReceipt {
     const job = this.getJob(jobId);
-    const advance = this.getAdvance(advanceId);
-    const offer = this.getOffer(advance.offerId);
-    job.status = "completed";
+    return this.repayAdvance({
+      advanceId,
+      repaymentSource: job.jobId,
+      grossRevenueAtomic: job.escrowAmountAtomic
+    });
+  }
+
+  repayAdvance(input: { advanceId: string; repaymentSource: string; grossRevenueAtomic: string }): RepaymentReceipt {
+    const advance = this.getAdvance(input.advanceId);
+    const lien = this.getLienForAdvance(advance.advanceId);
+    if (lien.repaymentSource !== input.repaymentSource) {
+      throw new C402Error("repayment_source_mismatch", "repayment source does not match active lien", 409);
+    }
+    const job = lien.productType === "job-backed" ? this.getJob(input.repaymentSource) : undefined;
+    if (job) job.status = "completed";
 
     const receipt = createRepaymentReceipt({
-      job,
+      repaymentSource: input.repaymentSource,
+      grossRevenueAtomic: input.grossRevenueAtomic,
       advance,
-      offer,
       reserveBps: 2000,
       signerPrivateKeyPem: this.signer.privateKey
     });
@@ -339,24 +395,25 @@ export class AgentCreditService {
       throw new C402Error("unsupported_funding_source", "repayment requires a direct lender advance", 409);
     }
     this.insuranceReserve += BigInt(receipt.reserveAtomic);
-    this.releaseLienAndCollateral(job.jobId, advance.advanceId);
+    this.releaseLienAndCollateral(lien.repaymentSource, advance.advanceId);
+    this.releaseBackingSource(lien);
     advance.status = "repaid";
-    job.status = "settled";
+    if (job) job.status = "settled";
     const event: AgentCreditPassportEvent = {
-      agent: job.agent,
-      jobId: job.jobId,
+      agent: job?.agent ?? this.getBackingSource(lien.repaymentSource).agent,
+      jobId: lien.repaymentSource,
       event: "advance_repaid",
       scoreDelta: 8,
       creditLimitAtomic: "20000000",
       createdAt: new Date().toISOString()
     };
     this.passport.push(event);
-    this.recordErc8004Feedback(job, event, advance, receipt);
+    this.recordErc8004Feedback(job ?? syntheticJob(this.getBackingSource(lien.repaymentSource)), event, advance, receipt);
     this.erc8004ValidationRequests.push(createErc8004CreditValidationRequest({
-      agentRef: agentRefFor(job),
+      agentRef: job ? agentRefFor(job) : syntheticAgentRef(this.getBackingSource(lien.repaymentSource)),
       validatorAddress: "0x0000000000000000000000000000000000008004",
-      requestURI: `c402://credit/jobs/${job.jobId}/repayment/${receipt.repaymentId}`,
-      job,
+      requestURI: `c402://credit/sources/${lien.repaymentSource}/repayment/${receipt.repaymentId}`,
+      job: job ?? syntheticJob(this.getBackingSource(lien.repaymentSource)),
       kind: "repayment-receipt",
       evidence: receipt
     }));
@@ -375,7 +432,7 @@ export class AgentCreditService {
       throw new C402Error("missing_lender", "advance has no lender", 409);
     }
     const lien = this.getLienForAdvance(advance.advanceId);
-    const collateral = this.collateral.get(lien.jobId);
+    const collateral = this.collateral.get(lien.repaymentSource);
     const seniorClaim = BigInt(lien.seniorClaimAtomic);
     const lockedCollateral = BigInt(collateral?.lockedAtomic ?? "0");
     const collateralPaid = lockedCollateral > seniorClaim ? seniorClaim : lockedCollateral;
@@ -396,11 +453,11 @@ export class AgentCreditService {
     }
     advance.status = "defaulted";
     lien.status = "liquidated";
-    const job = this.getJob(lien.jobId);
-    job.status = "failed";
+    const job = this.jobs.get(lien.repaymentSource);
+    if (job) job.status = "failed";
 
     const receipt = createLiquidationReceipt({
-      jobId: lien.jobId,
+      repaymentSource: lien.repaymentSource,
       advanceId: advance.advanceId,
       lender: advance.lender,
       collateralPaidAtomic: collateralPaid.toString(),
@@ -411,15 +468,16 @@ export class AgentCreditService {
     this.liquidations.set(receipt.liquidationId, receipt);
 
     const event: AgentCreditPassportEvent = {
-      agent: job.agent,
-      jobId: job.jobId,
+      agent: job?.agent ?? this.getBackingSource(lien.repaymentSource).agent,
+      jobId: lien.repaymentSource,
       event: "credit_suspended",
       scoreDelta: -25,
       creditLimitAtomic: "0",
       createdAt: new Date().toISOString()
     };
     this.passport.push(event);
-    this.recordErc8004Feedback(job, event, advance);
+    this.settleDefaultedBackingSource(lien, shortfall);
+    this.recordErc8004Feedback(job ?? syntheticJob(this.getBackingSource(lien.repaymentSource)), event, advance);
     void reason;
     return receipt;
   }
@@ -451,6 +509,7 @@ export class AgentCreditService {
   state(): CreditFlowState & { formatted: Record<string, string | string[]> } {
     return {
       jobs: Array.from(this.jobs.values()),
+      backingSources: Array.from(this.backingSources.values()),
       requests: Array.from(this.requests.values()),
       offers: Array.from(this.offers.values()),
       lenders: Array.from(this.lenders.values()),
@@ -486,6 +545,19 @@ export class AgentCreditService {
     return job;
   }
 
+  private getBackingSource(sourceId: string): CreditBackingSource {
+    const source = this.backingSources.get(sourceId);
+    if (!source) throw new C402Error("backing_source_not_found", `backing source ${sourceId} not found`, 404);
+    return source;
+  }
+
+  private underwrite(request: CreditRequest): UnderwritingDecision {
+    if (request.productType === "job-backed") {
+      return underwriteReceivable(this.getJob(request.repaymentSource), request, this.policy);
+    }
+    return underwriteBackingSource(this.getBackingSource(request.repaymentSource), request, this.policy);
+  }
+
   private getRequest(requestId: string): CreditRequest {
     const request = this.requests.get(requestId);
     if (!request) throw new C402Error("credit_request_not_found", `request ${requestId} not found`, 404);
@@ -512,6 +584,7 @@ export class AgentCreditService {
 
   private lockCollateral(jobId: string, principalAtomic: string): string {
     const position = this.collateral.get(jobId);
+    if (!position && this.backingSources.has(jobId)) return "0";
     const required = (BigInt(principalAtomic) * BigInt(this.minCollateralBps)) / 10_000n;
     const available = BigInt(position?.amountAtomic ?? "0") - BigInt(position?.lockedAtomic ?? "0");
     if (available < required) {
@@ -537,6 +610,36 @@ export class AgentCreditService {
     }
   }
 
+  private lockBackingSource(request: CreditRequest): string {
+    if (request.productType === "job-backed") return "0";
+    const source = this.getBackingSource(request.repaymentSource);
+    const amount = BigInt(request.amountAtomic);
+    source.lockedAtomic = (BigInt(source.lockedAtomic) + amount).toString();
+    source.updatedAt = new Date().toISOString();
+    return amount.toString();
+  }
+
+  private releaseBackingSource(lien: ReceivableLien): void {
+    if (lien.productType === "job-backed") return;
+    const source = this.getBackingSource(lien.repaymentSource);
+    source.lockedAtomic = (BigInt(source.lockedAtomic) > BigInt(lien.principalAtomic)
+      ? BigInt(source.lockedAtomic) - BigInt(lien.principalAtomic)
+      : 0n).toString();
+    source.updatedAt = new Date().toISOString();
+  }
+
+  private settleDefaultedBackingSource(lien: ReceivableLien, shortfall: bigint): void {
+    if (lien.productType === "job-backed") return;
+    const source = this.getBackingSource(lien.repaymentSource);
+    source.lockedAtomic = (BigInt(source.lockedAtomic) > BigInt(lien.principalAtomic)
+      ? BigInt(source.lockedAtomic) - BigInt(lien.principalAtomic)
+      : 0n).toString();
+    if (shortfall > 0n) {
+      source.status = "paused";
+    }
+    source.updatedAt = new Date().toISOString();
+  }
+
   private recordErc8004Feedback(
     job: FundedJob,
     passportEvent: AgentCreditPassportEvent,
@@ -558,5 +661,38 @@ function agentRefFor(job: FundedJob): Erc8004AgentRef {
   return job.agentRef ?? {
     agentRegistry: "eip155:114:0x0000000000000000000000000000000000008004",
     agentId: job.agent.replace(/^0x/i, "") || job.jobId
+  };
+}
+
+function defaultAdvanceRate(productType: Exclude<CreditProductType, "job-backed">): number {
+  if (productType === "asset-backed") return 6500;
+  if (productType === "subscription-backed") return 2500;
+  return 4000;
+}
+
+function defaultVerifier(productType: Exclude<CreditProductType, "job-backed">): CreditBackingSource["verifier"] {
+  if (productType === "asset-backed") return "ftso";
+  if (productType === "subscription-backed") return "fdc";
+  return "x402";
+}
+
+function syntheticJob(source: CreditBackingSource): FundedJob {
+  return {
+    jobId: source.sourceId,
+    buyer: source.verifier,
+    agent: source.agent,
+    agentRef: syntheticAgentRef(source),
+    escrowAmountAtomic: source.valueAtomic,
+    asset: source.asset,
+    description: `${source.productType} backing source verified by ${source.verifier}`,
+    status: source.status === "active" ? "funded" : "failed",
+    createdAt: source.updatedAt
+  };
+}
+
+function syntheticAgentRef(source: CreditBackingSource): Erc8004AgentRef {
+  return {
+    agentRegistry: `${source.network}:c402-credit-passport`,
+    agentId: source.agent.replace(/^0x/i, "") || source.sourceId
   };
 }

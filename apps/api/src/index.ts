@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { C402Error, type Purpose } from "@c402/protocol";
+import { C402Error, type CreditProductType, type Purpose } from "@c402/protocol";
 import { createFccAdapterFromEnv } from "@c402/fcc-adapter";
 import { AgentCreditService, ConfidentialPaymentService, createConfigFromEnv } from "@c402/server";
 
@@ -49,6 +49,12 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/credit/jobs") {
       return sendJson(res, 201, credit.createFundedJob(asFundedJobInput(await readJson(req))));
     }
+    if (req.method === "GET" && url.pathname === "/credit/backing-sources") {
+      return sendJson(res, 200, { backingSources: credit.state().backingSources });
+    }
+    if (req.method === "POST" && url.pathname === "/credit/backing-sources") {
+      return sendJson(res, 201, credit.registerBackingSource(asBackingSourceInput(await readJson(req))));
+    }
     if (req.method === "POST" && url.pathname.startsWith("/credit/jobs/") && url.pathname.endsWith("/collateral")) {
       const jobId = decodeURIComponent(url.pathname.slice("/credit/jobs/".length, -"/collateral".length));
       const body = await readJson(req);
@@ -78,6 +84,15 @@ const server = createServer(async (req, res) => {
       const jobId = decodeURIComponent(url.pathname.slice("/credit/jobs/".length, -"/complete".length));
       const body = await readJson(req);
       return sendJson(res, 200, credit.completeJob(jobId, String(body.advanceId)));
+    }
+    if (req.method === "POST" && url.pathname.startsWith("/credit/advances/") && url.pathname.endsWith("/repay")) {
+      const advanceId = decodeURIComponent(url.pathname.slice("/credit/advances/".length, -"/repay".length));
+      const body = await readJson(req);
+      return sendJson(res, 200, credit.repayAdvance({
+        advanceId,
+        repaymentSource: requiredString(body, "repaymentSource"),
+        grossRevenueAtomic: requiredString(body, "grossRevenueAtomic")
+      }));
     }
     if (req.method === "POST" && url.pathname.startsWith("/credit/jobs/") && url.pathname.endsWith("/fail")) {
       const jobId = decodeURIComponent(url.pathname.slice("/credit/jobs/".length, -"/fail".length));
@@ -173,9 +188,15 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
       },
       {
         method: "POST",
+        path: "/credit/backing-sources",
+        price: "free",
+        purpose: "Register verified asset, subscription, or earnings backing for non-job credit."
+      },
+      {
+        method: "POST",
         path: "/credit/request",
         price: "free",
-        purpose: "Request a purpose-bound advance against a funded job."
+        purpose: "Request a purpose-bound advance against a job, asset, subscription, or earnings backing source."
       },
       {
         method: "POST",
@@ -206,6 +227,12 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
         path: "/credit/jobs/{jobId}/complete",
         price: "free",
         purpose: "Complete a job and route repayment before agent proceeds."
+      },
+      {
+        method: "POST",
+        path: "/credit/advances/{advanceId}/repay",
+        price: "free",
+        purpose: "Repay any active credit advance from its pledged backing source."
       },
       {
         method: "POST",
@@ -244,6 +271,10 @@ function openApi(baseUrl: string): Record<string, unknown> {
       "/credit/jobs": {
         post: { summary: "Create a funded job", responses: { "201": { description: "Funded job" } } }
       },
+      "/credit/backing-sources": {
+        get: { summary: "List verified non-job backing sources", responses: { "200": { description: "Backing sources" } } },
+        post: { summary: "Register a verified asset, subscription, or earnings backing source", responses: { "201": { description: "Backing source" } } }
+      },
       "/credit/request": {
         post: { summary: "Request credit", responses: { "200": { description: "Underwriting decision and optional offer" } } }
       },
@@ -264,6 +295,9 @@ function openApi(baseUrl: string): Record<string, unknown> {
       },
       "/credit/jobs/{jobId}/complete": {
         post: { summary: "Complete and repay a job", responses: { "200": { description: "Repayment receipt" } } }
+      },
+      "/credit/advances/{advanceId}/repay": {
+        post: { summary: "Repay a non-job or generic advance", responses: { "200": { description: "Repayment receipt" } } }
       },
       "/credit/jobs/{jobId}/fail": {
         post: { summary: "Fail a job and suspend credit", responses: { "200": { description: "Passport event" } } }
@@ -347,6 +381,7 @@ function asFundedJobInput(body: Record<string, unknown>): {
 
 function asCreditRequestInput(body: Record<string, unknown>): {
   agent: string;
+  productType?: CreditProductType;
   amountAtomic: string;
   purpose: Purpose;
   supplier: string;
@@ -359,9 +394,14 @@ function asCreditRequestInput(body: Record<string, unknown>): {
   if (!["compute", "data", "storage", "gas", "approved-x402-service"].includes(purpose)) {
     throw new C402Error("invalid_credit_purpose", "purpose is not supported", 400);
   }
+  const productType = typeof body.productType === "string" ? body.productType : "job-backed";
+  if (!isCreditProductType(productType)) {
+    throw new C402Error("invalid_credit_product", "productType is not supported", 400);
+  }
   const durationSeconds = body.durationSeconds;
   return {
     agent: requiredString(body, "agent"),
+    productType,
     amountAtomic: requiredString(body, "amountAtomic"),
     purpose: purpose as Purpose,
     supplier: requiredString(body, "supplier"),
@@ -369,6 +409,28 @@ function asCreditRequestInput(body: Record<string, unknown>): {
     repaymentSource: requiredString(body, "repaymentSource"),
     maximumFeeAtomic: requiredString(body, "maximumFeeAtomic"),
     durationSeconds: typeof durationSeconds === "number" ? durationSeconds : undefined
+  };
+}
+
+function asBackingSourceInput(body: Record<string, unknown>) {
+  const productType = requiredString(body, "productType");
+  if (!["asset-backed", "subscription-backed", "earnings-backed"].includes(productType)) {
+    throw new C402Error("invalid_backing_source_type", "productType must be asset-backed, subscription-backed, or earnings-backed", 400);
+  }
+  const verifier = typeof body.verifier === "string" ? body.verifier : undefined;
+  if (verifier && !["ftso", "fdc", "x402", "operator"].includes(verifier)) {
+    throw new C402Error("invalid_verifier", "verifier must be ftso, fdc, x402, or operator", 400);
+  }
+  return {
+    sourceId: typeof body.sourceId === "string" ? body.sourceId : undefined,
+    productType: productType as Exclude<CreditProductType, "job-backed">,
+    agent: requiredString(body, "agent"),
+    asset: typeof body.asset === "string" ? body.asset : undefined,
+    network: typeof body.network === "string" ? body.network : undefined,
+    valueAtomic: requiredString(body, "valueAtomic"),
+    advanceRateBps: optionalNumber(body, "advanceRateBps"),
+    verifier: verifier as "ftso" | "fdc" | "x402" | "operator" | undefined,
+    evidenceId: requiredString(body, "evidenceId")
   };
 }
 
@@ -427,6 +489,10 @@ function optionalRiskBands(body: Record<string, unknown>, field: string): Array<
     }
   }
   return values as Array<"A" | "B" | "C" | "D">;
+}
+
+function isCreditProductType(value: string): value is CreditProductType {
+  return ["job-backed", "asset-backed", "subscription-backed", "earnings-backed"].includes(value);
 }
 
 function requiredString(body: Record<string, unknown>, field: string): string {

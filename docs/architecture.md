@@ -9,7 +9,14 @@ c402 has two independent layers:
 
 The production credit invariant is simple: lender funds do not enter the borrower wallet.
 
-Buyer funds a job receivable. The agent requests credit for a specific supplier and purpose. Lender agents register liquidity and policy. The service signs an offer only if the job is funded, the supplier is allowed, the advance is within policy, and the job still has enough margin. c402 matches the offer to the best eligible lender agent. The borrower or sponsor posts collateral, then the lender pays the supplier directly and records the supplier payment identifier. c402 creates a senior lien against the receivable. On job completion, repayment is calculated before agent proceeds. On missed deadline or default, locked collateral and reserve can be liquidated for the lender, with any shortfall recorded against the borrower reputation.
+The agent borrows against one repayment source:
+
+- `job-backed`: funded job escrow.
+- `asset-backed`: verified collateral value.
+- `subscription-backed`: verified recurring subscription revenue.
+- `earnings-backed`: verified historical agent earnings.
+
+The agent requests a credit amount for a specific supplier and purpose, plus a maximum acceptable fee. Lender agents register liquidity, policy, and their ask rate. The service signs a borrow intent only if the repayment source is valid, the supplier is allowed, the advance is within policy, and the source still has enough capacity at the borrower fee cap. c402 matches the offer to the lowest-rate eligible lender agent, using reputation and liquidity as tie-breakers. For job-backed credit, the borrower or sponsor can post additional collateral. For non-job credit, the backing source records locked capacity. The lender pays the supplier directly and records the supplier payment identifier. c402 creates a senior lien against the repayment source. On repayment, principal and fee are routed before unrestricted agent proceeds. On missed deadline or default, locked collateral and reserve can be liquidated for the lender, with any shortfall recorded against the borrower reputation.
 
 This limits loss if an agent fails or if an agent wallet is compromised, because the borrower never receives unrestricted loan principal.
 
@@ -17,6 +24,7 @@ This limits loss if an agent fails or if an agent wallet is compromised, because
 
 - API service: exposes credit and optional compute endpoints.
 - Credit state machine: jobs, requests, offers, advances, repayments, passport events.
+- Backing source registry: asset, subscription, and earnings sources with verifier evidence, advance rate, and locked capacity.
 - A2A lender matcher: ranks lender agents by eligibility, fee fit, liquidity headroom, risk policy, and reputation.
 - Lien and collateral engine: locks borrower/sponsor bond, creates senior repayment claims, releases collateral on repayment, and liquidates on default.
 - x402 adapter: verifies and settles payment payloads through an x402 facilitator.
