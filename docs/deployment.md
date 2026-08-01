@@ -53,6 +53,26 @@ curl https://api.your-domain.example/.well-known/c402.json
 curl https://api.your-domain.example/openapi.json
 ```
 
+## Recommended Host
+
+For the API, use **Fly.io** or **Railway** first. Both are a better fit than Vercel for this repository because the API and dashboard are already packaged as long-running Docker services.
+
+Vercel can work for a dashboard or a serverless wrapper, but it is not the cleanest first deployment target for this product. c402 needs always-on API routes, simple Docker deployment, Web/API callbacks, and later a separate FCC proxy/TEE runtime. Use Vercel only for a frontend mirror or marketing page.
+
+Fly.io quick path:
+
+```sh
+cp deploy/fly/api.fly.toml.example fly.toml
+fly launch --no-deploy
+fly secrets set C402_PUBLIC_URL=https://<your-api-app>.fly.dev
+fly secrets set C402_PAY_TO=0xYourReceiverWallet
+fly deploy
+```
+
+For the dashboard, deploy a second Fly app using `deploy/fly/dashboard.fly.toml.example` and set `C402_BASE_URL` to the API URL.
+
+Railway is also fine: create two services from GitHub, point each service at the relevant Dockerfile, and set the same environment variables in Railway Variables.
+
 ## Put It Behind HTTPS
 
 Use any normal HTTPS reverse proxy:

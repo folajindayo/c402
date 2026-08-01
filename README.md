@@ -28,6 +28,8 @@ Architecture and deployment docs:
 - `docs/configuration.md`
 - `docs/deployment.md`
 - `docs/flare-coston2.md`
+- `docs/security.md`
+- `docs/submission.md`
 
 The public agent entrypoints are:
 
@@ -88,6 +90,8 @@ The core hackathon endpoints are:
 - `GET /credit/state`: inspect jobs, requests, offers, advances, repayments, passport events, lender vault, and reserve.
 
 The underwriting invariant is deliberately simple and inspectable: a loan can be offered only when the job is funded or accepted, the requesting agent owns the receivable, the purpose and supplier domain are allowed, the advance is within policy, and principal plus fee leaves enough gross margin.
+
+The safer production contract direction is `contracts/src/C402CreditIntent.sol`: lenders fund one supplier payment at a time from their own wallet, instead of depositing into a pooled lender vault. This reduces the blast radius of a compromised admin because dormant lender funds are not held by the contract.
 
 ## ERC-8004 Reputation
 

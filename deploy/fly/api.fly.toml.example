@@ -1,0 +1,29 @@
+app = "c402-api"
+primary_region = "iad"
+
+[build]
+  dockerfile = "deploy/docker/api.Dockerfile"
+
+[env]
+  HOST = "0.0.0.0"
+  PORT = "4021"
+  C402_ENABLE_COMPUTE = "false"
+  C402_PAYMENT_MODE = "x402-testnet"
+  C402_NETWORK = "eip155:84532"
+  C402_ASSET = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+  X402_FACILITATOR_URL = "https://x402.org/facilitator"
+
+[[services]]
+  internal_port = 4021
+  protocol = "tcp"
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
