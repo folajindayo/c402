@@ -46,8 +46,11 @@ docker compose -f deploy/compose/compose.prod.yaml --env-file .env.production up
 
 - `GET /.well-known/c402.json`
 - `GET /openapi.json`
+- `GET /lenders`
+- `POST /lenders/register`
 - `POST /credit/jobs`
 - `POST /credit/request`
+- `POST /credit/match`
 - `POST /credit/offers/{offerId}/supplier-payment`
 - `POST /credit/jobs/{jobId}/complete`
 - `POST /credit/jobs/{jobId}/fail`

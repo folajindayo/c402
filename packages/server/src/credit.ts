@@ -7,6 +7,9 @@ import {
   createRepaymentReceipt,
   formatAtomic,
   generateSigningKeyPair,
+  parseAtomic,
+  randomHex,
+  scoreLenderForRequest,
   underwriteReceivable,
   verifyCreditOffer,
   type AgentCreditPassportEvent,
@@ -17,6 +20,8 @@ import {
   type Erc8004FeedbackSignal,
   type Erc8004ValidationRequest,
   type FundedJob,
+  type LenderMatch,
+  type LenderProfile,
   type Purpose,
   type RepaymentReceipt,
   type SpendingPolicy,
@@ -27,6 +32,8 @@ export interface CreditFlowState {
   jobs: FundedJob[];
   requests: CreditRequest[];
   offers: CreditOffer[];
+  lenders: LenderProfile[];
+  matches: LenderMatch[];
   advances: CreditAdvance[];
   repayments: RepaymentReceipt[];
   passport: AgentCreditPassportEvent[];
@@ -38,6 +45,8 @@ export interface CreditFlowState {
 
 export interface AgentCreditServiceOptions {
   endpoint?: string;
+  network?: string;
+  asset?: string;
 }
 
 export class AgentCreditService {
@@ -45,6 +54,8 @@ export class AgentCreditService {
   private readonly jobs = new Map<string, FundedJob>();
   private readonly requests = new Map<string, CreditRequest>();
   private readonly offers = new Map<string, CreditOffer>();
+  private readonly lenders = new Map<string, LenderProfile>();
+  private readonly matches = new Map<string, LenderMatch>();
   private readonly advances = new Map<string, CreditAdvance>();
   private readonly repayments = new Map<string, RepaymentReceipt>();
   private readonly passport: AgentCreditPassportEvent[] = [];
@@ -112,6 +123,103 @@ export class AgentCreditService {
     return { request, decision, offer };
   }
 
+  registerLender(input: {
+    lenderId?: string;
+    agent: string;
+    availableLiquidityAtomic: string;
+    asset?: string;
+    networks?: string[];
+    minFeeBps?: number;
+    maxDurationSeconds?: number;
+    allowedPurposes?: Purpose[];
+    allowedSupplierDomains?: string[];
+    acceptedRiskBands?: Array<UnderwritingDecision["riskBand"]>;
+    reputationScore?: number;
+    status?: LenderProfile["status"];
+  }): LenderProfile {
+    const lenderId = input.lenderId || `lender-${randomHex(8)}`;
+    const lender: LenderProfile = {
+      lenderId,
+      agent: input.agent,
+      availableLiquidityAtomic: input.availableLiquidityAtomic,
+      asset: input.asset ?? this.options.asset ?? "USDC",
+      networks: input.networks?.length ? input.networks : [this.options.network ?? "eip155:84532"],
+      minFeeBps: input.minFeeBps ?? 300,
+      maxDurationSeconds: input.maxDurationSeconds ?? 86_400,
+      allowedPurposes: input.allowedPurposes?.length ? input.allowedPurposes : this.policy.allowedUses,
+      allowedSupplierDomains: input.allowedSupplierDomains?.length ? input.allowedSupplierDomains : this.policy.allowedDomains,
+      acceptedRiskBands: input.acceptedRiskBands?.length ? input.acceptedRiskBands : ["A", "B"],
+      reputationScore: input.reputationScore ?? 50,
+      status: input.status ?? "active",
+      updatedAt: new Date().toISOString()
+    };
+    parseAtomic(lender.availableLiquidityAtomic, "availableLiquidityAtomic");
+    if (lender.minFeeBps < 0 || lender.minFeeBps > 10_000) {
+      throw new C402Error("invalid_lender_fee", "minFeeBps must be between 0 and 10000", 400);
+    }
+    if (lender.maxDurationSeconds <= 0) {
+      throw new C402Error("invalid_lender_duration", "maxDurationSeconds must be positive", 400);
+    }
+    if (lender.reputationScore < 0) {
+      throw new C402Error("invalid_lender_reputation", "reputationScore must be non-negative", 400);
+    }
+    this.lenders.set(lenderId, lender);
+    return lender;
+  }
+
+  matchCredit(offerId: string): { offer: CreditOffer; request: CreditRequest; decision: UnderwritingDecision; match?: LenderMatch; eligibleLenders: number } {
+    const offer = this.getOffer(offerId);
+    verifyCreditOffer(offer, this.signer.publicKey);
+    const request = this.getRequest(offer.requestId);
+    const job = this.getJob(request.repaymentSource);
+    const decision = underwriteReceivable(job, request, this.policy);
+    if (!decision.approved) {
+      return { offer, request, decision, eligibleLenders: 0 };
+    }
+
+    const candidates = Array.from(this.lenders.values())
+      .map((lender) => ({
+        lender,
+        score: scoreLenderForRequest({
+          lender,
+          request,
+          decision,
+          offer,
+          network: this.options.network ?? "eip155:84532",
+          asset: this.options.asset ?? "USDC"
+        })
+      }))
+      .filter((item): item is { lender: LenderProfile; score: number } => typeof item.score === "number")
+      .sort((a, b) => b.score - a.score || a.lender.minFeeBps - b.lender.minFeeBps);
+
+    const selected = candidates[0];
+    if (!selected) {
+      return { offer, request, decision, eligibleLenders: 0 };
+    }
+
+    const existing = Array.from(this.matches.values()).find((item) => item.offerId === offer.offerId);
+    if (existing) {
+      return { offer, request, decision, match: existing, eligibleLenders: candidates.length };
+    }
+
+    const match: LenderMatch = {
+      matchId: `match-${randomHex(8)}`,
+      offerId: offer.offerId,
+      requestId: request.requestId,
+      lenderId: selected.lender.lenderId,
+      lenderAgent: selected.lender.agent,
+      score: selected.score,
+      amountAtomic: offer.approvedAmountAtomic,
+      feeAtomic: offer.feeAtomic,
+      supplier: request.supplier,
+      supplierDomain: request.supplierDomain,
+      expiresAt: offer.expiresAt,
+      createdAt: new Date().toISOString()
+    };
+    this.matches.set(match.matchId, match);
+    return { offer, request, decision, match, eligibleLenders: candidates.length };
+  }
+
   recordDirectSupplierPayment(input: { offerId: string; lender: string; supplierPaymentId: string }): CreditAdvance {
     if (!input.lender) {
       throw new C402Error("missing_lender", "lender is required", 400);
@@ -122,6 +230,10 @@ export class AgentCreditService {
     const offer = this.getOffer(input.offerId);
     verifyCreditOffer(offer, this.signer.publicKey);
     const request = this.getRequest(offer.requestId);
+    const match = Array.from(this.matches.values()).find((item) => item.offerId === offer.offerId);
+    if (match && match.lenderAgent !== input.lender) {
+      throw new C402Error("lender_mismatch", "supplier payment lender does not match the selected lender agent", 409);
+    }
     const advance: CreditAdvance = {
       advanceId: `adv-${offer.requestId}`,
       offerId: offer.offerId,
@@ -135,6 +247,13 @@ export class AgentCreditService {
       supplierPaymentId: input.supplierPaymentId
     };
     this.advances.set(advance.advanceId, advance);
+    if (match) {
+      const lender = this.lenders.get(match.lenderId);
+      if (lender) {
+        lender.availableLiquidityAtomic = (BigInt(lender.availableLiquidityAtomic) - BigInt(offer.approvedAmountAtomic)).toString();
+        lender.updatedAt = new Date().toISOString();
+      }
+    }
     return advance;
   }
 
@@ -156,6 +275,15 @@ export class AgentCreditService {
     const lenderRepayment = BigInt(receipt.principalAtomic) + BigInt(receipt.feeAtomic) - BigInt(receipt.reserveAtomic);
     if (advance.fundingSource === "direct-lender" && advance.lender) {
       this.directLenderReceivables.set(advance.lender, (this.directLenderReceivables.get(advance.lender) ?? 0n) + lenderRepayment);
+      const match = Array.from(this.matches.values()).find((item) => item.offerId === advance.offerId);
+      if (match) {
+        const lender = this.lenders.get(match.lenderId);
+        if (lender) {
+          lender.availableLiquidityAtomic = (BigInt(lender.availableLiquidityAtomic) + lenderRepayment).toString();
+          lender.reputationScore += 3;
+          lender.updatedAt = new Date().toISOString();
+        }
+      }
     } else {
       throw new C402Error("unsupported_funding_source", "repayment requires a direct lender advance", 409);
     }
@@ -210,6 +338,8 @@ export class AgentCreditService {
       jobs: Array.from(this.jobs.values()),
       requests: Array.from(this.requests.values()),
       offers: Array.from(this.offers.values()),
+      lenders: Array.from(this.lenders.values()),
+      matches: Array.from(this.matches.values()),
       advances: Array.from(this.advances.values()),
       repayments: Array.from(this.repayments.values()),
       passport: this.passport,

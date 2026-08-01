@@ -13,6 +13,37 @@ export interface SpendingPolicy {
   minGrossMarginBps: number;
 }
 
+export interface LenderProfile {
+  lenderId: string;
+  agent: string;
+  availableLiquidityAtomic: string;
+  asset: string;
+  networks: string[];
+  minFeeBps: number;
+  maxDurationSeconds: number;
+  allowedPurposes: Purpose[];
+  allowedSupplierDomains: string[];
+  acceptedRiskBands: Array<UnderwritingDecision["riskBand"]>;
+  reputationScore: number;
+  status: "active" | "paused";
+  updatedAt: string;
+}
+
+export interface LenderMatch {
+  matchId: string;
+  offerId: string;
+  requestId: string;
+  lenderId: string;
+  lenderAgent: string;
+  score: number;
+  amountAtomic: string;
+  feeAtomic: string;
+  supplier: string;
+  supplierDomain: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
 export interface FundedJob {
   jobId: string;
   buyer: string;
@@ -165,6 +196,38 @@ export function createCreditOffer(
 export function verifyCreditOffer(offer: CreditOffer, signerPublicKeyPem: string): void {
   assertC402(verifyObjectSignature(signerPublicKeyPem, objectWithoutSignature(offer), offer.signature), "invalid_credit_offer", "credit offer signature failed verification", 402);
   assertC402(Date.parse(offer.expiresAt) > Date.now(), "expired_credit_offer", "credit offer has expired", 402);
+}
+
+export function scoreLenderForRequest(input: {
+  lender: LenderProfile;
+  request: CreditRequest;
+  decision: UnderwritingDecision;
+  offer: CreditOffer;
+  network: string;
+  asset: string;
+}): number | undefined {
+  if (input.lender.status !== "active") return undefined;
+  if (input.lender.asset !== input.asset) return undefined;
+  if (!input.lender.networks.includes(input.network)) return undefined;
+  if (!input.lender.allowedPurposes.includes(input.request.purpose)) return undefined;
+  if (!input.lender.allowedSupplierDomains.includes(input.request.supplierDomain)) return undefined;
+  if (!input.lender.acceptedRiskBands.includes(input.decision.riskBand)) return undefined;
+  if (input.request.durationSeconds > input.lender.maxDurationSeconds) return undefined;
+
+  const amount = parseAtomic(input.offer.approvedAmountAtomic, "approvedAmountAtomic");
+  const fee = parseAtomic(input.offer.feeAtomic, "feeAtomic");
+  const liquidity = parseAtomic(input.lender.availableLiquidityAtomic, "availableLiquidityAtomic");
+  const maximumFee = parseAtomic(input.request.maximumFeeAtomic, "maximumFeeAtomic");
+  if (amount > liquidity) return undefined;
+  if (fee > maximumFee) return undefined;
+
+  const feeBps = Number((fee * 10_000n) / amount);
+  if (feeBps < input.lender.minFeeBps) return undefined;
+
+  const liquidityHeadroom = Number(((liquidity - amount) * 1_000n) / liquidity);
+  const feeFit = Math.max(0, 1_000 - Math.abs(input.lender.minFeeBps - feeBps));
+  const riskScore = { A: 400, B: 300, C: 150, D: 0 }[input.decision.riskBand];
+  return input.lender.reputationScore * 10 + riskScore + feeFit + liquidityHeadroom;
 }
 
 export function createRepaymentReceipt(input: {

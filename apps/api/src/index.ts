@@ -5,7 +5,11 @@ import { AgentCreditService, ConfidentialPaymentService, createConfigFromEnv } f
 
 const computeEnabled = process.env.C402_ENABLE_COMPUTE === "true";
 const service = computeEnabled ? createConfidentialPaymentService() : undefined;
-const credit = new AgentCreditService({ endpoint: process.env.C402_CREDIT_ENDPOINT ?? process.env.C402_PUBLIC_URL });
+const credit = new AgentCreditService({
+  endpoint: process.env.C402_CREDIT_ENDPOINT ?? process.env.C402_PUBLIC_URL,
+  network: process.env.C402_NETWORK,
+  asset: process.env.C402_ASSET
+});
 if (service) await service.warmup();
 
 const server = createServer(async (req, res) => {
@@ -36,11 +40,21 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/credit/state") {
       return sendJson(res, 200, credit.state());
     }
+    if (req.method === "GET" && url.pathname === "/lenders") {
+      return sendJson(res, 200, { lenders: credit.state().lenders });
+    }
+    if (req.method === "POST" && url.pathname === "/lenders/register") {
+      return sendJson(res, 201, credit.registerLender(asLenderProfileInput(await readJson(req))));
+    }
     if (req.method === "POST" && url.pathname === "/credit/jobs") {
       return sendJson(res, 201, credit.createFundedJob(asFundedJobInput(await readJson(req))));
     }
     if (req.method === "POST" && url.pathname === "/credit/request") {
       return sendJson(res, 200, credit.requestCredit(asCreditRequestInput(await readJson(req))));
+    }
+    if (req.method === "POST" && url.pathname === "/credit/match") {
+      const body = await readJson(req);
+      return sendJson(res, 200, credit.matchCredit(requiredString(body, "offerId")));
     }
     if (req.method === "POST" && url.pathname.startsWith("/credit/offers/") && url.pathname.endsWith("/supplier-payment")) {
       const offerId = decodeURIComponent(url.pathname.slice("/credit/offers/".length, -"/supplier-payment".length));
@@ -151,6 +165,18 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
       },
       {
         method: "POST",
+        path: "/lenders/register",
+        price: "free",
+        purpose: "Register an agent lender profile with liquidity, fee, supplier, and risk preferences."
+      },
+      {
+        method: "POST",
+        path: "/credit/match",
+        price: "free",
+        purpose: "Match an approved credit offer to the best eligible lender agent."
+      },
+      {
+        method: "POST",
         path: "/credit/offers/{offerId}/supplier-payment",
         price: "free",
         purpose: "Record a lender-to-supplier x402 payment before repayment is claimed from the receivable."
@@ -194,6 +220,15 @@ function openApi(baseUrl: string): Record<string, unknown> {
       },
       "/credit/request": {
         post: { summary: "Request credit", responses: { "200": { description: "Underwriting decision and optional offer" } } }
+      },
+      "/lenders": {
+        get: { summary: "List active lender agents", responses: { "200": { description: "Lender profiles" } } }
+      },
+      "/lenders/register": {
+        post: { summary: "Register lender agent profile", responses: { "201": { description: "Lender profile" } } }
+      },
+      "/credit/match": {
+        post: { summary: "Match offer to lender agent", responses: { "200": { description: "Selected lender match" } } }
       },
       "/credit/offers/{offerId}/supplier-payment": {
         post: { summary: "Record lender-to-supplier payment", responses: { "200": { description: "Supplier advance" } } }
@@ -303,6 +338,63 @@ function asCreditRequestInput(body: Record<string, unknown>): {
     maximumFeeAtomic: requiredString(body, "maximumFeeAtomic"),
     durationSeconds: typeof durationSeconds === "number" ? durationSeconds : undefined
   };
+}
+
+function asLenderProfileInput(body: Record<string, unknown>) {
+  return {
+    lenderId: typeof body.lenderId === "string" ? body.lenderId : undefined,
+    agent: requiredString(body, "agent"),
+    availableLiquidityAtomic: requiredString(body, "availableLiquidityAtomic"),
+    asset: typeof body.asset === "string" ? body.asset : undefined,
+    networks: optionalStringArray(body, "networks"),
+    minFeeBps: optionalNumber(body, "minFeeBps"),
+    maxDurationSeconds: optionalNumber(body, "maxDurationSeconds"),
+    allowedPurposes: optionalPurposes(body, "allowedPurposes"),
+    allowedSupplierDomains: optionalStringArray(body, "allowedSupplierDomains"),
+    acceptedRiskBands: optionalRiskBands(body, "acceptedRiskBands"),
+    reputationScore: optionalNumber(body, "reputationScore"),
+    status: body.status === "paused" ? "paused" as const : "active" as const
+  };
+}
+
+function optionalStringArray(body: Record<string, unknown>, field: string): string[] | undefined {
+  const value = body[field];
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string" && item.length > 0)) {
+    throw new C402Error("invalid_json_body", `${field} must be an array of non-empty strings`, 400);
+  }
+  return value;
+}
+
+function optionalNumber(body: Record<string, unknown>, field: string): number | undefined {
+  const value = body[field];
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+    throw new C402Error("invalid_json_body", `${field} must be an integer`, 400);
+  }
+  return value;
+}
+
+function optionalPurposes(body: Record<string, unknown>, field: string): Purpose[] | undefined {
+  const values = optionalStringArray(body, field);
+  if (!values) return undefined;
+  for (const value of values) {
+    if (!["compute", "data", "storage", "gas", "approved-x402-service"].includes(value)) {
+      throw new C402Error("invalid_credit_purpose", `${field} contains an unsupported purpose`, 400);
+    }
+  }
+  return values as Purpose[];
+}
+
+function optionalRiskBands(body: Record<string, unknown>, field: string): Array<"A" | "B" | "C" | "D"> | undefined {
+  const values = optionalStringArray(body, field);
+  if (!values) return undefined;
+  for (const value of values) {
+    if (!["A", "B", "C", "D"].includes(value)) {
+      throw new C402Error("invalid_risk_band", `${field} contains an unsupported risk band`, 400);
+    }
+  }
+  return values as Array<"A" | "B" | "C" | "D">;
 }
 
 function requiredString(body: Record<string, unknown>, field: string): string {

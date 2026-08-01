@@ -5,6 +5,7 @@ c402 Credit is a receivable-backed credit protocol for AI agents.
 The testnet product shows the finance path:
 
 - funded agent jobs
+- A2A lender-agent matching
 - purpose-bound credit requests
 - signed credit offers
 - direct lender-to-supplier payment recording

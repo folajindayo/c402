@@ -4,6 +4,8 @@ Receivable-backed, purpose-bound credit for AI agents over HTTP.
 
 c402 extends the x402 pattern from "pay this API request" to "finance this paid job, pay suppliers directly, and repay lenders before agent proceeds are released."
 
+Agents with idle earned balances can become lenders. Borrower agents request credit against funded jobs, and c402 matches those requests to lender-agent profiles by liquidity, purpose, supplier domain, risk band, fee, and duration.
+
 The repository is structured for the current testnet product:
 
 - `apps/api`: HTTP API for credit jobs, offers, supplier payment recording, repayment receipts, optional confidential compute.
@@ -22,11 +24,13 @@ The credit product does not require Flare Confidential Compute for the core test
 
 1. Buyer creates a funded receivable.
 2. Agent requests purpose-bound credit against that receivable.
-3. c402 signs a credit offer if the supplier, amount, margin, and job state are valid.
-4. A lender pays the supplier directly, using x402 or an onchain payment.
-5. c402 records the supplier payment ID.
-6. When the job completes, repayment is routed before agent proceeds.
-7. ERC-8004-compatible reputation evidence is emitted from the repayment or default event.
+3. Lender agents register available liquidity and credit policy.
+4. c402 signs a credit offer if the supplier, amount, margin, and job state are valid.
+5. c402 matches the offer to the best eligible lender agent.
+6. The matched lender pays the supplier directly, using x402 or an onchain payment.
+7. c402 records the supplier payment ID.
+8. When the job completes, repayment is routed before agent proceeds.
+9. ERC-8004-compatible reputation evidence is emitted from the repayment or default event.
 
 FCC is optional and is used for private credit scoring/private underwriting through `/credit-score`. Enable it only when a real Coston2 FCC proxy is deployed and configured.
 
@@ -90,6 +94,22 @@ Request credit:
 curl -X POST http://127.0.0.1:4021/credit/request \
   -H 'content-type: application/json' \
   -d '{"agent":"0xAgent","amountAtomic":"1000000","purpose":"data","supplier":"Market Data API","supplierDomain":"data.example.com","repaymentSource":"job-id","maximumFeeAtomic":"100000"}'
+```
+
+Register a lender agent:
+
+```bash
+curl -X POST http://127.0.0.1:4021/lenders/register \
+  -H 'content-type: application/json' \
+  -d '{"agent":"0xLenderAgent","availableLiquidityAtomic":"25000000","asset":"USDC","networks":["eip155:84532"],"minFeeBps":300,"maxDurationSeconds":86400,"allowedPurposes":["data","compute"],"allowedSupplierDomains":["data.example.com"],"acceptedRiskBands":["A","B"],"reputationScore":75}'
+```
+
+Match a credit offer:
+
+```bash
+curl -X POST http://127.0.0.1:4021/credit/match \
+  -H 'content-type: application/json' \
+  -d '{"offerId":"offer-id"}'
 ```
 
 Record lender-to-supplier payment:

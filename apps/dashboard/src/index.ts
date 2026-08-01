@@ -66,9 +66,24 @@ function render(apiBaseUrl: string): string {
   </section>
   <section class="grid">
     <div class="metric"><strong>Lender Receivables</strong><span id="lenderReceivables">loading</span></div>
+    <div class="metric"><strong>Lender Agents</strong><span id="lenderAgents">loading</span></div>
     <div class="metric"><strong>Insurance Reserve</strong><span id="insuranceReserve">loading</span></div>
     <div class="metric"><strong>Funded Jobs</strong><span id="fundedJobs">loading</span></div>
     <div class="metric"><strong>Advances</strong><span id="advancesCount">loading</span></div>
+  </section>
+  <section class="panel" style="margin-top: 16px;">
+    <h2>A2A Lender Market</h2>
+    <table>
+      <thead><tr><th>Lender Agent</th><th>Liquidity</th><th>Fee</th><th>Suppliers</th><th>Status</th></tr></thead>
+      <tbody id="lenders"><tr><td colspan="5">loading</td></tr></tbody>
+    </table>
+  </section>
+  <section class="panel" style="margin-top: 16px;">
+    <h2>Credit Matches</h2>
+    <table>
+      <thead><tr><th>Match</th><th>Lender</th><th>Offer</th><th>Amount</th><th>Score</th></tr></thead>
+      <tbody id="matches"><tr><td colspan="5">loading</td></tr></tbody>
+    </table>
   </section>
   <section class="panel">
     <h2>c402 Credit</h2>
@@ -118,6 +133,7 @@ async function refresh() {
   document.getElementById("attestation").textContent = JSON.stringify(attestation ? redact(attestation) : attestationResult.body, null, 2);
   document.getElementById("requests").innerHTML = (requests.requests || []).map(row => "<tr><td>" + row.requestId + "</td><td>" + row.state + "</td><td>" + (row.paymentId || "") + "</td><td>" + row.updatedAt + "</td><td>" + (row.failureReason || "") + "</td></tr>").join("") || "<tr><td colspan='5'>No requests yet</td></tr>";
   document.getElementById("lenderReceivables").textContent = (credit.formatted.directLenderReceivables || []).join("\\n") || "$0 USDC";
+  document.getElementById("lenderAgents").textContent = String((credit.lenders || []).length);
   document.getElementById("insuranceReserve").textContent = credit.formatted.insuranceReserve;
   document.getElementById("fundedJobs").textContent = String((credit.jobs || []).length);
   document.getElementById("advancesCount").textContent = String((credit.advances || []).length);
@@ -128,6 +144,8 @@ async function refresh() {
     const repayment = advance ? (credit.repayments || []).find(item => item.advanceId === advance.advanceId) : undefined;
     return "<tr><td>" + job.jobId + "</td><td>" + job.status + "</td><td>" + money(job.escrowAmountAtomic) + " " + job.asset + "</td><td>" + (advance ? money(advance.amountAtomic) + " paid to " + advance.supplier : request ? "not advanced" : "") + "</td><td>" + (repayment ? money(repayment.principalAtomic) + " + " + money(repayment.feeAtomic) + " fee; agent " + money(repayment.agentProceedsAtomic) : "") + "</td></tr>";
   }).join("") || "<tr><td colspan='5'>No credit jobs yet</td></tr>";
+  document.getElementById("lenders").innerHTML = (credit.lenders || []).map(row => "<tr><td>" + row.agent + "</td><td>" + money(row.availableLiquidityAtomic) + " " + row.asset + "</td><td>" + row.minFeeBps + " bps</td><td>" + row.allowedSupplierDomains.join(", ") + "</td><td>" + row.status + "</td></tr>").join("") || "<tr><td colspan='5'>No lender agents yet</td></tr>";
+  document.getElementById("matches").innerHTML = (credit.matches || []).map(row => "<tr><td>" + row.matchId + "</td><td>" + row.lenderAgent + "</td><td>" + row.offerId + "</td><td>" + money(row.amountAtomic) + "</td><td>" + row.score + "</td></tr>").join("") || "<tr><td colspan='5'>No matches yet</td></tr>";
   document.getElementById("passport").innerHTML = (credit.passport || []).map(row => "<tr><td>" + row.agent + "</td><td>" + row.event + "</td><td>" + row.scoreDelta + "</td><td>" + money(row.creditLimitAtomic) + "</td><td>" + row.createdAt + "</td></tr>").join("") || "<tr><td colspan='5'>No passport events yet</td></tr>";
   document.getElementById("erc8004").innerHTML = (credit.erc8004Feedback || []).map(row => "<tr><td>" + row.agentId + "</td><td>" + row.tag1 + " / " + row.tag2 + "</td><td>" + row.value + "</td><td>" + row.feedbackHash + "</td></tr>").join("") || "<tr><td colspan='4'>No ERC-8004 signals yet</td></tr>";
 }
@@ -143,11 +161,13 @@ async function getJsonAllowError(url) {
 }
 function showError(error) {
   const message = error instanceof Error ? error.message : String(error);
-  for (const id of ["tee", "codeHash", "mode", "lenderReceivables", "insuranceReserve", "fundedJobs", "advancesCount"]) {
+  for (const id of ["tee", "codeHash", "mode", "lenderReceivables", "lenderAgents", "insuranceReserve", "fundedJobs", "advancesCount"]) {
     document.getElementById(id).textContent = "error";
   }
   document.getElementById("requests").innerHTML = "<tr><td colspan='5'>" + message + "</td></tr>";
   document.getElementById("creditJobs").innerHTML = "<tr><td colspan='5'>" + message + "</td></tr>";
+  document.getElementById("lenders").innerHTML = "<tr><td colspan='5'>" + message + "</td></tr>";
+  document.getElementById("matches").innerHTML = "<tr><td colspan='5'>" + message + "</td></tr>";
   document.getElementById("passport").innerHTML = "<tr><td colspan='5'>" + message + "</td></tr>";
   document.getElementById("erc8004").innerHTML = "<tr><td colspan='4'>" + message + "</td></tr>";
   document.getElementById("attestation").textContent = message;
