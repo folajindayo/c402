@@ -98,8 +98,10 @@ func DefaultPrivateKey() (*ecdsa.PrivateKey, error) {
 	privKeyString := os.Getenv("DEPLOYMENT_PRIVATE_KEY")
 
 	if privKeyString == "" {
-		fmt.Fprintln(os.Stderr, "WARNING: DEPLOYMENT_PRIVATE_KEY not set — using hardcoded Hardhat dev key")
-		fmt.Fprintln(os.Stderr, "         This key only has funds on local devnets (Hardhat/Anvil)")
+		if configs.PrvWithFunds == nil {
+			return nil, errors.New("DEPLOYMENT_PRIVATE_KEY must be set in your local .env")
+		}
+		fmt.Fprintln(os.Stderr, "WARNING: DEPLOYMENT_PRIVATE_KEY not set — using FUNDED_TEST_PRIVATE_KEY")
 		return configs.PrvWithFunds, nil
 	} else {
 		if strings.HasPrefix(privKeyString, "0x") || strings.HasPrefix(privKeyString, "0X") {

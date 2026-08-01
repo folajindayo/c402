@@ -104,7 +104,7 @@ cd tools && CHAIN_URL=https://coston2-api.flare.network/ext/C/rpc \
 |----------|---------|-------------|
 | `CHAIN_URL` | `http://127.0.0.1:8545` | RPC endpoint |
 | `ADDRESSES_FILE` | `../../config/coston2/deployed-addresses.json` | Path to deployed registry addresses |
-| `DEPLOYMENT_PRIVATE_KEY` | Hardhat dev key | Funded private key for deployments and transactions |
+| `DEPLOYMENT_PRIVATE_KEY` | required for transactions | Funded private key for deployments and transactions |
 
 **Note:** Integration tests deploy fresh contracts on each run. On Coston2, this costs gas. On a local node, it's free.
 

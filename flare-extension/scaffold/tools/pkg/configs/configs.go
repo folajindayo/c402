@@ -31,7 +31,7 @@ func init() {
 	var err error
 	privateKey := os.Getenv("FUNDED_TEST_PRIVATE_KEY")
 	if privateKey == "" {
-		panic("FUNDED_TEST_PRIVATE_KEY must be set for tools that need a funded account")
+		return
 	}
 	PrvWithFunds, err = crypto.HexToECDSA(privateKey)
 	if err != nil {

@@ -36,7 +36,13 @@ C402_PUBLIC_URL=https://api.your-domain.example
 ## Run With Docker Compose
 
 ```sh
-docker compose -f compose.prod.yaml --env-file .env.production up -d --build
+docker compose -f deploy/compose/compose.prod.yaml --env-file .env.production up -d --build
+```
+
+Equivalent npm script:
+
+```sh
+npm run deploy:compose
 ```
 
 Health checks:

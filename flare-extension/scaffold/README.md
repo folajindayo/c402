@@ -89,8 +89,8 @@ The repo splits into a **language-neutral spine** (contracts, deployment tooling
 |----------|---------|-------------|
 | `ADDRESSES_FILE` | auto-detected | Path to `deployed-addresses.json` |
 | `CHAIN_URL` | `http://127.0.0.1:8545` | Chain RPC endpoint |
-| `DEPLOYMENT_PRIVATE_KEY` | Hardhat dev key | Funded private key for transactions |
-| `PROXY_PRIVATE_KEY` | Hardhat dev key | Proxy signing key (used by start-services) |
+| `DEPLOYMENT_PRIVATE_KEY` | required for transactions | Funded private key for transactions |
+| `PROXY_PRIVATE_KEY` | required for proxy | Proxy signing key (used by start-services) |
 | `EXTENSION_ID` | from `config/extension.env` | Extension ID (bytes32 hex, set by pre-build) |
 | `INITIAL_OWNER` | derived from `DEPLOYMENT_PRIVATE_KEY` | Initial contract owner address |
 | `EXT_PROXY_URL` | `http://localhost:6674` | Extension proxy URL (post-build, test) |

@@ -137,7 +137,7 @@ func CheckDeployerKeySource() CheckResult {
 			ID:      "D5",
 			Name:    "deployer key source",
 			Status:  PASS,
-			Message: "using Hardhat dev key (LOCAL_MODE)",
+			Message: "local mode; set DEPLOYMENT_PRIVATE_KEY or FUNDED_TEST_PRIVATE_KEY for transactions",
 		}
 	}
 
@@ -145,8 +145,8 @@ func CheckDeployerKeySource() CheckResult {
 		Step:    "deploy",
 		ID:      "D5",
 		Name:    "deployer key source",
-		Status:  WARN,
-		Message: "DEPLOYMENT_PRIVATE_KEY not set — using Hardhat dev key which has no funds on Coston2",
+		Status:  FAIL,
+		Message: "DEPLOYMENT_PRIVATE_KEY not set",
 		Fix:     "Set DEPLOYMENT_PRIVATE_KEY in .env to a funded account on the target network",
 	}
 }
@@ -684,8 +684,8 @@ func RegisterServicesChecks(r *Report, extensionEnvPath string) {
 			Step:    "services",
 			ID:      "S10",
 			Name:    "PROXY_PRIVATE_KEY set on non-local",
-			Status:  WARN,
-			Message: "PROXY_PRIVATE_KEY not set in non-local mode — proxy will use default key",
+			Status:  FAIL,
+			Message: "PROXY_PRIVATE_KEY not set in non-local mode",
 			Fix:     "Set PROXY_PRIVATE_KEY in .env for non-local deployments",
 		})
 	} else {

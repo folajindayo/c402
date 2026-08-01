@@ -19,9 +19,17 @@ The deployable testnet path is intentionally split:
 - `apps/api`: confidential credit scoring API plus c402 Credit job/advance/repayment routes.
 - `apps/agent-demo`: AI agent demo for either c402 Credit or confidential compute.
 - `apps/dashboard`: local observability dashboard.
-- `flare-extension`: FCC extension scaffold notes and starter handler.
+- `deploy`: Docker and Compose assets for production deployment.
+- `flare-extension`: optional FCC extension scaffold notes and starter handler.
 
-Deployment instructions are in `docs/deployment.md`. The public agent entrypoints are:
+Architecture and deployment docs:
+
+- `docs/architecture.md`
+- `docs/configuration.md`
+- `docs/deployment.md`
+- `docs/flare-coston2.md`
+
+The public agent entrypoints are:
 
 - `GET /.well-known/c402.json`
 - `GET /v1/services/catalog`
