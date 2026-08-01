@@ -1,61 +1,44 @@
-# Security Model
+# Security
 
-## Main Principle
+## Money Movement
 
-c402 Credit should minimize money at rest inside protocol-controlled contracts.
+c402 uses a direct lender-to-supplier model. The lender pays an approved supplier, not the borrower. The borrower receives only the service output needed to finish the funded job. Repayment is calculated from the job receivable and routed before agent proceeds.
 
-The preferred production architecture is direct lender-to-supplier funding:
+This architecture reduces contract custody risk. If the credit service or borrower wallet fails, unrestricted lender principal is not sitting in the borrower wallet.
 
-```text
-lender wallet -> supplier/API provider
-job escrow -> repayment router -> lender first, agent second
-```
+## Contract Risk
 
-This is safer than a large admin-controlled lender vault because a compromised admin cannot drain lender funds that are still in lender wallets.
+Smart contracts should avoid holding large pooled lender balances. The safer pattern is:
 
-## Contract Variants
+- signed credit intents with explicit lender, borrower, supplier, amount, fee, expiry, and receivable ID
+- supplier payment proof before an advance is considered active
+- per-intent limits rather than global hot balances
+- short expiries
+- pause controls
+- repayment-first settlement
+- offchain monitoring for unusual supplier or borrower behavior
 
-`C402Credit` is the original pooled-vault MVP. It demonstrates the repayment mechanics but is not the preferred production design for real lender deposits.
+## Secrets
 
-`C402CreditIntent` is the safer direction:
+Secrets are environment-only:
 
-- no pooled lender vault
-- lender funds exactly one supplier payment
-- supplier must be allowlisted
-- repayment claim is tied to a funded job
-- settlement credits lender before agent
-- payouts are pull-based
-- new credit can be paused
+- wallet private keys
+- deployment keys
+- FCC proxy keys
+- facilitator bearer tokens
+- RPC credentials
 
-## Remaining Risks
+Never commit `.env`, `.env.production`, generated proxy configs, or private key material.
 
-Even with direct payment intents, money loss is still possible from:
+## FCC Trust Boundary
 
-- malicious or compromised admin approving bad suppliers
-- bad underwriting decisions
-- fake job escrows or wash trading
-- compromised frontend/API tricking lenders into signing bad transactions
-- supplier failing to deliver after payment
-- TEE implementation or attestation failure
-- smart contract bug
+When FCC is enabled, clients verify:
 
-The design reduces blast radius; it does not make losses impossible.
+- TEE identity
+- extension ID
+- code hash
+- input encryption key
+- receipt signing key
+- receipt commitments
 
-## Production Controls
-
-Before real user funds:
-
-- use multisig for admin
-- add a timelock for supplier and policy changes
-- cap exposure per lender, agent, supplier, job, and day
-- verify FCC receipts onchain before large advances
-- require lender-signed payment intents with expiry and max amount
-- add buyer dispute and refund flows
-- add formal invariant tests
-- run external audit
-
-## Secret Policy
-
-Private keys, RPC secrets, database URLs, bearer tokens, and tunnel URLs must stay in environment variables or deployment-provider secret managers. They must not be committed.
-
-See `docs/configuration.md`.
+The TEE still becomes part of the trusted computing base. The code hash and receipt signature make failures attributable and auditable; they do not eliminate the need to review the extension code and deployment process.

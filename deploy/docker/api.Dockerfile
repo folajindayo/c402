@@ -4,7 +4,6 @@ WORKDIR /app
 COPY package.json package-lock.json tsconfig.json tsconfig.base.json ./
 COPY apps ./apps
 COPY packages ./packages
-COPY tests ./tests
 
 RUN npm ci
 RUN npm run build

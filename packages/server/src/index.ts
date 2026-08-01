@@ -19,7 +19,7 @@ import {
 } from "@c402/protocol";
 import type { FccAdapter } from "@c402/fcc-adapter";
 import { CREDIT_OUTPUT_SCHEMA } from "@c402/credit-model";
-import { DemoPaymentAdapter, X402FacilitatorPaymentAdapter, type PaymentAdapter } from "./payment.js";
+import { X402FacilitatorPaymentAdapter, type PaymentAdapter } from "./payment.js";
 import { RequestStore } from "./state.js";
 
 export * from "./payment.js";
@@ -33,12 +33,9 @@ export interface C402ServerConfig {
   network: string;
   payTo: string;
   expectedCodeHash: string;
-  paymentMode: "demo" | "x402-testnet";
-  demoPaymentSecret: string;
   resourceUrl: string;
   facilitatorUrl?: string;
   facilitatorBearerToken?: string;
-  allowLocalDemo: boolean;
   requirementTtlSeconds: number;
   fcc: FccAdapter;
 }
@@ -70,29 +67,17 @@ export class ConfidentialPaymentService {
   private lastRequirementById = new Map<string, PaymentRequirement>();
 
   constructor(private readonly config: C402ServerConfig) {
-    this.payment =
-      config.paymentMode === "demo"
-        ? new DemoPaymentAdapter({
-            amount: config.amountAtomic,
-            asset: config.asset,
-            network: config.network,
-            payTo: config.payTo,
-            secret: config.demoPaymentSecret,
-            resourceUrl: config.resourceUrl,
-            expiresAt: () => new Date(Date.now() + config.requirementTtlSeconds * 1000).toISOString(),
-            attachCompute: (accept, expiresAt) => this.createComputeRequirement(accept.requestId, expiresAt)
-          })
-        : new X402FacilitatorPaymentAdapter({
-            amount: config.amountAtomic,
-            asset: config.asset,
-            network: config.network,
-            payTo: config.payTo,
-            resourceUrl: config.resourceUrl,
-            facilitatorUrl: config.facilitatorUrl,
-            facilitatorBearerToken: config.facilitatorBearerToken,
-            expiresAt: () => new Date(Date.now() + config.requirementTtlSeconds * 1000).toISOString(),
-            attachCompute: (accept, expiresAt) => this.createComputeRequirement(accept.requestId, expiresAt)
-          });
+    this.payment = new X402FacilitatorPaymentAdapter({
+      amount: config.amountAtomic,
+      asset: config.asset,
+      network: config.network,
+      payTo: config.payTo,
+      resourceUrl: config.resourceUrl,
+      facilitatorUrl: config.facilitatorUrl,
+      facilitatorBearerToken: config.facilitatorBearerToken,
+      expiresAt: () => new Date(Date.now() + config.requirementTtlSeconds * 1000).toISOString(),
+      attachCompute: (accept, expiresAt) => this.createComputeRequirement(accept.requestId, expiresAt)
+    });
   }
 
   async attestation(): Promise<AttestationInfo> {
@@ -266,12 +251,7 @@ export class ConfidentialPaymentService {
 }
 
 export function createConfigFromEnv(env: NodeJS.ProcessEnv, fcc: FccAdapter): C402ServerConfig {
-  const allowLocalDemo = env.ALLOW_LOCAL_DEMO === "true";
-  const paymentMode = env.C402_PAYMENT_MODE === "demo" ? "demo" : "x402-testnet";
-  if (paymentMode === "demo" && !allowLocalDemo) {
-    throw new C402Error("local_demo_disabled", "C402_PAYMENT_MODE=demo requires ALLOW_LOCAL_DEMO=true; set C402_PAYMENT_MODE=x402-testnet for real x402 facilitator settlement.", 500);
-  }
-  if (paymentMode !== "demo" && !env.C402_PAY_TO) {
+  if (!env.C402_PAY_TO) {
     throw new C402Error("missing_pay_to", "Real x402 mode requires C402_PAY_TO to be set to the receiver wallet address.", 500);
   }
   return {
@@ -279,14 +259,11 @@ export function createConfigFromEnv(env: NodeJS.ProcessEnv, fcc: FccAdapter): C4
     amountAtomic: env.C402_AMOUNT_ATOMIC ?? centsAtomic(env.C402_PRICE_USD ?? "0.10"),
     asset: env.C402_ASSET ?? "USDC",
     network: env.C402_NETWORK ?? "eip155:84532",
-    payTo: env.C402_PAY_TO ?? "0x0000000000000000000000000000000000000402",
+    payTo: env.C402_PAY_TO,
     expectedCodeHash: env.C402_EXPECTED_CODE_HASH ?? "0xcredit_model_v1",
-    paymentMode,
-    demoPaymentSecret: env.C402_DEMO_PAYMENT_SECRET ?? "dev-secret-change-me",
     resourceUrl: env.C402_RESOURCE_URL ?? `${env.C402_BASE_URL ?? "http://127.0.0.1:4021"}/credit-score`,
     facilitatorUrl: env.X402_FACILITATOR_URL,
     facilitatorBearerToken: env.X402_FACILITATOR_BEARER_TOKEN,
-    allowLocalDemo,
     requirementTtlSeconds: Number(env.C402_REQUIREMENT_TTL_SECONDS ?? 120),
     fcc
   };

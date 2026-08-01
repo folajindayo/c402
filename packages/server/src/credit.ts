@@ -32,9 +32,12 @@ export interface CreditFlowState {
   passport: AgentCreditPassportEvent[];
   erc8004Feedback: Erc8004FeedbackSignal[];
   erc8004ValidationRequests: Erc8004ValidationRequest[];
-  lenderVaultAtomic: string;
   insuranceReserveAtomic: string;
   directLenderReceivables: Array<{ lender: string; amountAtomic: string }>;
+}
+
+export interface AgentCreditServiceOptions {
+  endpoint?: string;
 }
 
 export class AgentCreditService {
@@ -48,8 +51,9 @@ export class AgentCreditService {
   private readonly erc8004Feedback: Erc8004FeedbackSignal[] = [];
   private readonly erc8004ValidationRequests: Erc8004ValidationRequest[] = [];
   private readonly directLenderReceivables = new Map<string, bigint>();
-  private lenderVault = 50_000_000n;
   private insuranceReserve = 0n;
+
+  constructor(private readonly options: AgentCreditServiceOptions = {}) {}
 
   readonly policy: SpendingPolicy = {
     allowedUses: ["compute", "data", "storage", "approved-x402-service"],
@@ -108,46 +112,27 @@ export class AgentCreditService {
     return { request, decision, offer };
   }
 
-  acceptOffer(offerId: string): CreditAdvance {
-    const offer = this.getOffer(offerId);
-    verifyCreditOffer(offer, this.signer.publicKey);
-    const request = this.getRequest(offer.requestId);
-    const amount = BigInt(offer.approvedAmountAtomic);
-    if (amount > this.lenderVault) {
-      throw new C402Error("vault_liquidity_insufficient", "lender vault cannot fund this advance", 409);
+  recordDirectSupplierPayment(input: { offerId: string; lender: string; supplierPaymentId: string }): CreditAdvance {
+    if (!input.lender) {
+      throw new C402Error("missing_lender", "lender is required", 400);
     }
-
-    this.lenderVault -= amount;
-    const advance: CreditAdvance = {
-      advanceId: `adv-${offer.requestId}`,
-      offerId: offer.offerId,
-      requestId: offer.requestId,
-      fundingSource: "pooled-vault",
-      supplier: request.supplier,
-      amountAtomic: offer.approvedAmountAtomic,
-      status: "advanced",
-      paidAt: new Date().toISOString(),
-      supplierPaymentId: `x402-paid:${request.supplierDomain}:${request.requestId}`
-    };
-    this.advances.set(advance.advanceId, advance);
-    return advance;
-  }
-
-  acceptOfferDirect(offerId: string, lender: string): CreditAdvance {
-    const offer = this.getOffer(offerId);
+    if (!input.supplierPaymentId) {
+      throw new C402Error("missing_supplier_payment", "supplierPaymentId is required", 400);
+    }
+    const offer = this.getOffer(input.offerId);
     verifyCreditOffer(offer, this.signer.publicKey);
     const request = this.getRequest(offer.requestId);
     const advance: CreditAdvance = {
       advanceId: `adv-${offer.requestId}`,
       offerId: offer.offerId,
       requestId: offer.requestId,
-      lender,
+      lender: input.lender,
       fundingSource: "direct-lender",
       supplier: request.supplier,
       amountAtomic: offer.approvedAmountAtomic,
       status: "advanced",
       paidAt: new Date().toISOString(),
-      supplierPaymentId: `x402-direct:${lender}:${request.supplierDomain}:${request.requestId}`
+      supplierPaymentId: input.supplierPaymentId
     };
     this.advances.set(advance.advanceId, advance);
     return advance;
@@ -172,7 +157,7 @@ export class AgentCreditService {
     if (advance.fundingSource === "direct-lender" && advance.lender) {
       this.directLenderReceivables.set(advance.lender, (this.directLenderReceivables.get(advance.lender) ?? 0n) + lenderRepayment);
     } else {
-      this.lenderVault += lenderRepayment;
+      throw new C402Error("unsupported_funding_source", "repayment requires a direct lender advance", 409);
     }
     this.insuranceReserve += BigInt(receipt.reserveAtomic);
     advance.status = "repaid";
@@ -220,87 +205,6 @@ export class AgentCreditService {
     return event;
   }
 
-  seedHackathonSuccess(): { job: FundedJob; request: CreditRequest; decision: UnderwritingDecision; offer: CreditOffer; advance: CreditAdvance; repayment: RepaymentReceipt } {
-    const job = this.createFundedJob({
-      buyer: "0xBuyer",
-      agent: "0xAgent",
-      agentRef: { agentRegistry: "eip155:114:0x0000000000000000000000000000000000008004", agentId: "4021" },
-      escrowAmountAtomic: "10000000",
-      description: "Analyze 50 companies and prepare a concise research report"
-    });
-    const credit = this.requestCredit({
-      agent: job.agent,
-      amountAtomic: "1000000",
-      purpose: "data",
-      supplier: "Market Data API",
-      supplierDomain: "data.example.com",
-      repaymentSource: job.jobId,
-      maximumFeeAtomic: "100000"
-    });
-    if (!credit.offer) throw new C402Error("seed_failed", credit.decision.reason ?? "credit was not approved", 500);
-    const advance = this.acceptOffer(credit.offer.offerId);
-    const repayment = this.completeJob(job.jobId, advance.advanceId);
-    return { job, request: credit.request, decision: credit.decision, offer: credit.offer, advance, repayment };
-  }
-
-  seedDirectSupplierSuccess(): { job: FundedJob; request: CreditRequest; decision: UnderwritingDecision; offer: CreditOffer; advance: CreditAdvance; repayment: RepaymentReceipt; moneyPath: string[] } {
-    const job = this.createFundedJob({
-      buyer: "0xBuyer",
-      agent: "0xAgent",
-      agentRef: { agentRegistry: "eip155:114:0x0000000000000000000000000000000000008004", agentId: "4021" },
-      escrowAmountAtomic: "10000000",
-      description: "Analyze 50 companies using direct lender-to-supplier credit"
-    });
-    const credit = this.requestCredit({
-      agent: job.agent,
-      amountAtomic: "1000000",
-      purpose: "data",
-      supplier: "Market Data API",
-      supplierDomain: "data.example.com",
-      repaymentSource: job.jobId,
-      maximumFeeAtomic: "100000"
-    });
-    if (!credit.offer) throw new C402Error("seed_failed", credit.decision.reason ?? "credit was not approved", 500);
-    const advance = this.acceptOfferDirect(credit.offer.offerId, "0xLender");
-    const repayment = this.completeJob(job.jobId, advance.advanceId);
-    return {
-      job,
-      request: credit.request,
-      decision: credit.decision,
-      offer: credit.offer,
-      advance,
-      repayment,
-      moneyPath: [
-        "buyer -> job escrow: 10.00 USDC",
-        "lender wallet -> supplier: 1.00 USDC",
-        "job escrow -> lender receivable: 1.04 USDC",
-        "job escrow -> insurance reserve: 0.01 USDC",
-        "job escrow -> agent proceeds: 8.95 USDC"
-      ]
-    };
-  }
-
-  seedHackathonFailure(): { job: FundedJob; request: CreditRequest; decision: UnderwritingDecision; passportEvent: AgentCreditPassportEvent } {
-    const job = this.createFundedJob({
-      buyer: "0xBuyer",
-      agent: "0xRiskyAgent",
-      agentRef: { agentRegistry: "eip155:114:0x0000000000000000000000000000000000008004", agentId: "4022" },
-      escrowAmountAtomic: "10000000",
-      description: "Failed research job scenario"
-    });
-    const credit = this.requestCredit({
-      agent: job.agent,
-      amountAtomic: "1000000",
-      purpose: "data",
-      supplier: "Unapproved Data API",
-      supplierDomain: "unknown.example.com",
-      repaymentSource: job.jobId,
-      maximumFeeAtomic: "100000"
-    });
-    const passportEvent = this.failJob(job.jobId);
-    return { job, request: credit.request, decision: credit.decision, passportEvent };
-  }
-
   state(): CreditFlowState & { formatted: Record<string, string | string[]> } {
     return {
       jobs: Array.from(this.jobs.values()),
@@ -311,14 +215,12 @@ export class AgentCreditService {
       passport: this.passport,
       erc8004Feedback: this.erc8004Feedback,
       erc8004ValidationRequests: this.erc8004ValidationRequests,
-      lenderVaultAtomic: this.lenderVault.toString(),
       insuranceReserveAtomic: this.insuranceReserve.toString(),
       directLenderReceivables: Array.from(this.directLenderReceivables.entries()).map(([lender, amount]) => ({
         lender,
         amountAtomic: amount.toString()
       })),
       formatted: {
-        lenderVault: `${formatAtomic(this.lenderVault)} USDC`,
         insuranceReserve: `${formatAtomic(this.insuranceReserve)} USDC`,
         directLenderReceivables: Array.from(this.directLenderReceivables.entries()).map(([lender, amount]) => `${lender}: ${formatAtomic(amount)} USDC`)
       }
@@ -358,7 +260,7 @@ export class AgentCreditService {
     this.erc8004Feedback.push(createErc8004CreditFeedback({
       agentRef: agentRefFor(job),
       passportEvent,
-      endpoint: "https://c402.local/credit",
+      endpoint: this.options.endpoint ?? "c402://credit",
       feedbackURI: `c402://credit/jobs/${job.jobId}/feedback/${passportEvent.event}`,
       advance,
       repayment

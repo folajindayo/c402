@@ -13,7 +13,6 @@ import {
   encryptJson,
   envelopeCommitment,
   generateEncryptionKeyPair,
-  hmacSignature,
   objectWithoutSignature,
   verifyObjectSignature,
   type ComputePayload,
@@ -26,9 +25,6 @@ import {
 export interface C402FetchOptions {
   privateInput: unknown;
   verifyCodeHash: string;
-  payer?: string;
-  demoPaymentSecret?: string;
-  allowDemoPayment?: boolean;
   x402PaymentPayload?: unknown;
   createX402PaymentPayload?: (paymentRequirement: PaymentRequirement) => Promise<unknown>;
   fetchImpl?: typeof fetch;
@@ -69,8 +65,13 @@ export async function c402Fetch(url: string, options: C402FetchOptions): Promise
 
   const accept = paymentRequirement.accepts[0];
   const paymentSignature = options.x402PaymentPayload
-    ?? await options.createX402PaymentPayload?.(paymentRequirement)
-    ?? createDemoPaymentPayload(options, accept);
+    ?? await options.createX402PaymentPayload?.(paymentRequirement);
+  if (!paymentSignature) {
+    throw new C402Error("missing_x402_payment_payload", "No x402 payment payload was provided. Pass x402PaymentPayload or createX402PaymentPayload from an x402 wallet/client.", 402);
+  }
+  if (!accept) {
+    throw new C402Error("missing_payment_accept", "payment requirement did not include an accepted payment option", 402);
+  }
 
   const paid = await fetcher(url, {
     method: "POST",
@@ -110,25 +111,6 @@ function verifyRequirement(payment: PaymentRequirement, compute: ComputeRequirem
   if (compute.paymentPolicy !== "release-on-valid-receipt") {
     throw new C402Error("unsupported_payment_policy", "client requires release-on-valid-receipt", 412);
   }
-}
-
-function createDemoPaymentPayload(options: C402FetchOptions, accept: PaymentRequirement["accepts"][number]): unknown {
-  if (!options.allowDemoPayment) {
-    throw new C402Error("missing_x402_payment_payload", "No real x402 payment payload was provided. Pass x402PaymentPayload from an official x402 wallet/client, or set allowDemoPayment=true only for local demos.", 402);
-  }
-  const paymentSignatureUnsigned = {
-    protocol: "x402-demo",
-    version: 1,
-    requestId: accept.requestId,
-    payer: options.payer ?? "agent-demo",
-    amount: accept.amount,
-    asset: accept.asset,
-    network: accept.network
-  } as const;
-  return {
-    ...paymentSignatureUnsigned,
-    signature: hmacSignature(options.demoPaymentSecret ?? "dev-secret-change-me", paymentSignatureUnsigned)
-  };
 }
 
 function verifyReceipt(

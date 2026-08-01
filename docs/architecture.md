@@ -1,54 +1,29 @@
 # Architecture
 
-c402 is organized as a standard TypeScript monorepo plus Solidity contracts and an optional Flare Confidential Compute extension.
+c402 has two independent layers:
 
-## Repository Layout
+1. Agent credit: receivable-backed lending for agents, usable today without FCC.
+2. Confidential compute: optional c402/x402 extension for private, attested execution on Flare FCC.
 
-```text
-apps/
-  api/              HTTP API, discovery metadata, credit routes, optional compute route
-  agent-demo/       CLI/demo agent that exercises credit or confidential compute flows
-  dashboard/        Read-only operational dashboard
-packages/
-  protocol/         Wire types, headers, commitments, canonical JSON, crypto helpers
-  client/           Agent-facing c402Fetch client
-  server/           Payment handling, c402 middleware, credit state machine
-  credit-model/     Deterministic underwriting/scoring model used by the MVP
-  fcc-adapter/      Local deterministic adapter and Coston2 FCC adapter boundary
-contracts/
-  src/              C402Credit and ERC-8004 writer contracts
-  test/             Foundry tests
-deploy/
-  docker/           Production Dockerfiles
-  compose/          Production Docker Compose files
-deployments/        Public testnet addresses and transaction receipts
-docs/               Deployment, configuration, and Flare notes
-flare-extension/    Optional FCC extension scaffold and handler
-tests/              Node test suite
-```
+## Credit Flow
 
-## Runtime Boundaries
+The production credit invariant is simple: lender funds do not enter the borrower wallet.
 
-`apps/api` is the public service boundary. It exposes:
+Buyer funds a job receivable. The agent requests credit for a specific supplier and purpose. The service signs an offer only if the job is funded, the supplier is allowed, the advance is within policy, and the job still has enough margin. A lender pays the supplier directly and records the supplier payment identifier. On job completion, repayment is calculated before agent proceeds.
 
-- `GET /.well-known/c402.json` for machine discovery.
-- `GET /v1/services/catalog` for service metadata.
-- `GET /openapi.json` for integration tooling.
-- `/credit/*` for receivable-backed agent credit.
-- `/credit-score` only when confidential compute is enabled.
+This limits loss if an agent fails or if an agent wallet is compromised, because the borrower never receives unrestricted loan principal.
 
-`packages/server` owns the protocol state transitions. The invariant is intentionally inspectable: advances must be backed by a funded receivable, restricted by purpose/domain, paid directly to the supplier, and repaid before agent proceeds.
+## Main Components
 
-`packages/protocol` owns serialization and commitments. Anything that crosses HTTP headers, receipts, signatures, or evidence hashes belongs there instead of being duplicated in apps.
+- API service: exposes credit and optional compute endpoints.
+- Credit state machine: jobs, requests, offers, advances, repayments, passport events.
+- x402 adapter: verifies and settles payment payloads through an x402 facilitator.
+- ERC-8004 writer contract: records credit feedback hashes for agent reputation.
+- Credit intent contract: binds borrower, lender, supplier, receivable, fee, expiry, and supplier payment proof.
+- FCC adapter: talks to a Coston2 FCC proxy when confidential compute is enabled.
 
-`packages/fcc-adapter` is the only boundary that should know how to talk to Flare FCC. The rest of c402 can run in credit-only mode while FCC is disabled.
+## FCC Boundary
 
-## x402 Compatibility
+FCC is used when sensitive input should not be public: underwriting inputs, customer financial data, model prompts, or proprietary scoring logic. The TEE receives encrypted input, runs the registered code version, returns encrypted output, and signs a compute receipt. Onchain consumers only need the signed output or a commitment to it.
 
-c402 does not replace x402. It extends the same HTTP 402 idea:
-
-- x402 answers: pay this HTTP resource.
-- c402 Credit answers: finance this payment from a funded receivable, then repay automatically.
-- c402 Compute answers: pay for private/verifiable work and return a signed compute receipt.
-
-Agents should discover c402 services through the well-known/catalog endpoints, then follow the advertised route flow.
+The credit product remains valid when FCC is off; private underwriting becomes available when FCC is on.

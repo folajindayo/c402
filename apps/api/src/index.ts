@@ -5,7 +5,7 @@ import { AgentCreditService, ConfidentialPaymentService, createConfigFromEnv } f
 
 const computeEnabled = process.env.C402_ENABLE_COMPUTE === "true";
 const service = computeEnabled ? createConfidentialPaymentService() : undefined;
-const credit = new AgentCreditService();
+const credit = new AgentCreditService({ endpoint: process.env.C402_CREDIT_ENDPOINT ?? process.env.C402_PUBLIC_URL });
 if (service) await service.warmup();
 
 const server = createServer(async (req, res) => {
@@ -42,9 +42,14 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/credit/request") {
       return sendJson(res, 200, credit.requestCredit(asCreditRequestInput(await readJson(req))));
     }
-    if (req.method === "POST" && url.pathname.startsWith("/credit/offers/") && url.pathname.endsWith("/accept")) {
-      const offerId = decodeURIComponent(url.pathname.slice("/credit/offers/".length, -"/accept".length));
-      return sendJson(res, 200, credit.acceptOffer(offerId));
+    if (req.method === "POST" && url.pathname.startsWith("/credit/offers/") && url.pathname.endsWith("/supplier-payment")) {
+      const offerId = decodeURIComponent(url.pathname.slice("/credit/offers/".length, -"/supplier-payment".length));
+      const body = await readJson(req);
+      return sendJson(res, 200, credit.recordDirectSupplierPayment({
+        offerId,
+        lender: requiredString(body, "lender"),
+        supplierPaymentId: requiredString(body, "supplierPaymentId")
+      }));
     }
     if (req.method === "POST" && url.pathname.startsWith("/credit/jobs/") && url.pathname.endsWith("/complete")) {
       const jobId = decodeURIComponent(url.pathname.slice("/credit/jobs/".length, -"/complete".length));
@@ -55,15 +60,6 @@ const server = createServer(async (req, res) => {
       const jobId = decodeURIComponent(url.pathname.slice("/credit/jobs/".length, -"/fail".length));
       const body = await readJson(req);
       return sendJson(res, 200, credit.failJob(jobId, typeof body.advanceId === "string" ? body.advanceId : undefined));
-    }
-    if (req.method === "POST" && url.pathname === "/credit/demo/success") {
-      return sendJson(res, 200, credit.seedHackathonSuccess());
-    }
-    if (req.method === "POST" && url.pathname === "/credit/demo/direct-success") {
-      return sendJson(res, 200, credit.seedDirectSupplierSuccess());
-    }
-    if (req.method === "POST" && url.pathname === "/credit/demo/failure") {
-      return sendJson(res, 200, credit.seedHackathonFailure());
     }
     if (req.method === "GET" && url.pathname.startsWith("/receipts/")) {
       if (!service) return sendComputeDisabled(res);
@@ -155,15 +151,9 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
       },
       {
         method: "POST",
-        path: "/credit/offers/{offerId}/accept",
+        path: "/credit/offers/{offerId}/supplier-payment",
         price: "free",
-        purpose: "Accept a signed credit offer using the pooled-vault demo path."
-      },
-      {
-        method: "POST",
-        path: "/credit/demo/direct-success",
-        price: "free",
-        purpose: "Demonstrate the safer direct lender-wallet-to-supplier credit path."
+        purpose: "Record a lender-to-supplier x402 payment before repayment is claimed from the receivable."
       },
       {
         method: "POST",
@@ -205,11 +195,8 @@ function openApi(baseUrl: string): Record<string, unknown> {
       "/credit/request": {
         post: { summary: "Request credit", responses: { "200": { description: "Underwriting decision and optional offer" } } }
       },
-      "/credit/offers/{offerId}/accept": {
-        post: { summary: "Accept a credit offer", responses: { "200": { description: "Supplier advance" } } }
-      },
-      "/credit/demo/direct-success": {
-        post: { summary: "Run the direct lender-to-supplier demo flow", responses: { "200": { description: "Direct supplier payment and repayment-first receipt" } } }
+      "/credit/offers/{offerId}/supplier-payment": {
+        post: { summary: "Record lender-to-supplier payment", responses: { "200": { description: "Supplier advance" } } }
       },
       "/credit/jobs/{jobId}/complete": {
         post: { summary: "Complete and repay a job", responses: { "200": { description: "Repayment receipt" } } }

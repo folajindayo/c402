@@ -5,7 +5,6 @@ import type {
   ComputeRequirement,
   CreditAssessmentInput,
   CreditAssessmentResult,
-  DemoPaymentSignature,
   PaymentRequirement
 } from "./types.js";
 
@@ -54,17 +53,6 @@ export function assertComputePayload(value: ComputePayload): void {
   assertNonEmpty(value.encryptedInput.iv, "encryptedInput.iv");
   assertNonEmpty(value.encryptedInput.tag, "encryptedInput.tag");
   assertNonEmpty(value.encryptedInput.ciphertext, "encryptedInput.ciphertext");
-}
-
-export function assertDemoPaymentSignature(value: DemoPaymentSignature): void {
-  assertC402(value.protocol === "x402-demo", "invalid_payment_signature", "demo payment protocol must be x402-demo");
-  assertC402(value.version === 1, "invalid_payment_signature", "unsupported demo payment version");
-  assertNonEmpty(value.requestId, "requestId");
-  assertNonEmpty(value.payer, "payer");
-  assertNonEmpty(value.amount, "amount");
-  assertNonEmpty(value.asset, "asset");
-  assertNonEmpty(value.network, "network");
-  assertNonEmpty(value.signature, "signature");
 }
 
 export function assertComputeReceipt(value: ComputeReceipt): void {

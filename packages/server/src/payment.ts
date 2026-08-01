@@ -1,11 +1,7 @@
 import {
-  assertDemoPaymentSignature,
   C402Error,
   C402_EXTENSION_KEY,
-  hmacSignature,
-  verifyHmac,
   type ComputeRequirement,
-  type DemoPaymentSignature,
   type PaymentAccept,
   type PaymentRequirement
 } from "@c402/protocol";
@@ -24,90 +20,6 @@ export interface PaymentAdapter {
   createRequirement(requestId: string): PaymentRequirement;
   verify(signature: unknown, requirement: PaymentRequirement): Promise<VerifiedPayment>;
   release(payment: VerifiedPayment, receiptStatus: "success" | "failed" | "timeout"): Promise<{ settlementTx?: string }>;
-}
-
-export interface DemoPaymentAdapterOptions {
-  amount: string;
-  asset: string;
-  network: string;
-  payTo: string;
-  secret: string;
-  expiresAt: () => string;
-  resourceUrl: string;
-  attachCompute: (accept: PaymentAccept, expiresAt: string) => ComputeRequirement;
-}
-
-export class DemoPaymentAdapter implements PaymentAdapter {
-  constructor(private readonly options: DemoPaymentAdapterOptions) {}
-
-  createRequirement(requestId: string): PaymentRequirement {
-    const base = {
-      x402Version: 2 as const,
-      requestId,
-      error: "payment required",
-      resource: {
-        url: this.options.resourceUrl,
-        description: "c402 confidential credit assessment",
-        mimeType: "application/json",
-        serviceName: "c402"
-      },
-      accepts: [{
-        requestId,
-        scheme: "exact" as const,
-        amount: this.options.amount,
-        asset: this.options.asset,
-        network: this.options.network,
-        payTo: this.options.payTo,
-        maxTimeoutSeconds: 30,
-        extra: { requestId, ...assetExtra(this.options.network, this.options.asset) }
-      }]
-    };
-    const expiresAt = this.options.expiresAt();
-    return {
-      ...base,
-      extensions: {
-        [C402_EXTENSION_KEY]: this.options.attachCompute(base.accepts[0], expiresAt)
-      }
-    };
-  }
-
-  async verify(signature: unknown, requirement: PaymentRequirement): Promise<VerifiedPayment> {
-    const parsed = signature as DemoPaymentSignature;
-    assertDemoPaymentSignature(parsed);
-
-    const signedFields = {
-      protocol: parsed.protocol,
-      version: parsed.version,
-      requestId: parsed.requestId,
-      payer: parsed.payer,
-      amount: parsed.amount,
-      asset: parsed.asset,
-      network: parsed.network
-    };
-
-    if (!verifyHmac(this.options.secret, signedFields, parsed.signature)) {
-      throw new C402Error("invalid_payment_signature", "payment signature failed verification", 402);
-    }
-    const accept = requirement.accepts[0];
-    if (parsed.requestId !== accept.requestId || parsed.amount !== accept.amount || parsed.asset !== accept.asset || parsed.network !== accept.network) {
-      throw new C402Error("payment_requirement_mismatch", "payment signature does not match advertised requirement", 402);
-    }
-
-    return {
-      paymentId: `x402-demo:${parsed.requestId}:${parsed.payer}`,
-      payer: parsed.payer,
-      amount: parsed.amount,
-      asset: parsed.asset,
-      network: parsed.network
-    };
-  }
-
-  async release(payment: VerifiedPayment, receiptStatus: "success" | "failed" | "timeout"): Promise<{ settlementTx?: string }> {
-    if (receiptStatus !== "success") {
-      return {};
-    }
-    return { settlementTx: `x402-demo-settlement:${payment.paymentId}` };
-  }
 }
 
 export interface X402FacilitatorPaymentAdapterOptions {
@@ -226,11 +138,4 @@ function assetExtra(network: string, asset: string): Record<string, string> {
     return { name: "USDC", version: "2" };
   }
   return {};
-}
-
-export function signDemoPayment(secret: string, input: Omit<DemoPaymentSignature, "signature">): DemoPaymentSignature {
-  return {
-    ...input,
-    signature: hmacSignature(secret, input)
-  };
 }

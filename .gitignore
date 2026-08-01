@@ -1,6 +1,5 @@
 node_modules/
 dist/
-dist-tests/
 cache/
 contracts/out/
 contracts/cache/
@@ -20,22 +19,6 @@ contracts/cache/
 .git/
 **/.git/
 
-# Flare FCC local/proxy files can contain DB credentials or deployment keys.
-flare-extension/scaffold/config/extension.env
-flare-extension/scaffold/config/proxy/extension_proxy.coston.toml
-flare-extension/scaffold/config/proxy/extension_proxy.coston.docker.toml
-flare-extension/scaffold/config/proxy/extension_proxy.coston2.toml
-flare-extension/scaffold/config/proxy/extension_proxy.coston2.docker.toml
-flare-extension/scaffold/config/register-tee.state
-flare-extension/scaffold/go.work
-flare-extension/scaffold/go.work.sum
-flare-extension/scaffold/tools/start-*
-flare-extension/scaffold/tools/allow-*
-flare-extension/scaffold/tools/deploy-*
-flare-extension/scaffold/tools/register-*
-flare-extension/scaffold/tools/run-*
-flare-extension/scaffold/tools/verify-*
-flare-extension/scaffold/tools/query-*
-flare-extension/scaffold/tools/set-*
-flare-extension/scaffold/tools/audit-*
-flare-extension/scaffold/tools/test-*
+# FCC local/proxy files can contain DB credentials or deployment keys.
+flare-extension/**/config/extension.env
+flare-extension/**/config/proxy/*.toml

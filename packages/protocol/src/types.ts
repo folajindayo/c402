@@ -58,17 +58,6 @@ export interface PaymentAccept {
   extra: Record<string, unknown>;
 }
 
-export interface DemoPaymentSignature {
-  protocol: "x402-demo";
-  version: 1;
-  requestId: string;
-  payer: string;
-  amount: string;
-  asset: string;
-  network: string;
-  signature: string;
-}
-
 export interface ComputePayload {
   protocol: "c402";
   version: 1;
@@ -134,6 +123,6 @@ export interface AttestationInfo {
   codeHash: string;
   inputEncryptionKey: string;
   teeSigningKey: string;
-  mode: "local" | "coston2";
+  mode: "coston2";
   verifiedAt: string;
 }

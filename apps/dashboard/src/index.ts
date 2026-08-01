@@ -65,7 +65,7 @@ function render(apiBaseUrl: string): string {
     <div class="step"><h2>4. Repay First</h2><p>Completed job revenue repays principal, fee, and reserve before agent profit.</p></div>
   </section>
   <section class="grid">
-    <div class="metric"><strong>Lender Vault</strong><span id="lenderVault">loading</span></div>
+    <div class="metric"><strong>Lender Receivables</strong><span id="lenderReceivables">loading</span></div>
     <div class="metric"><strong>Insurance Reserve</strong><span id="insuranceReserve">loading</span></div>
     <div class="metric"><strong>Funded Jobs</strong><span id="fundedJobs">loading</span></div>
     <div class="metric"><strong>Advances</strong><span id="advancesCount">loading</span></div>
@@ -117,7 +117,7 @@ async function refresh() {
   document.getElementById("mode").textContent = attestation ? attestation.mode : "credit-only";
   document.getElementById("attestation").textContent = JSON.stringify(attestation ? redact(attestation) : attestationResult.body, null, 2);
   document.getElementById("requests").innerHTML = (requests.requests || []).map(row => "<tr><td>" + row.requestId + "</td><td>" + row.state + "</td><td>" + (row.paymentId || "") + "</td><td>" + row.updatedAt + "</td><td>" + (row.failureReason || "") + "</td></tr>").join("") || "<tr><td colspan='5'>No requests yet</td></tr>";
-  document.getElementById("lenderVault").textContent = credit.formatted.lenderVault;
+  document.getElementById("lenderReceivables").textContent = (credit.formatted.directLenderReceivables || []).join("\\n") || "$0 USDC";
   document.getElementById("insuranceReserve").textContent = credit.formatted.insuranceReserve;
   document.getElementById("fundedJobs").textContent = String((credit.jobs || []).length);
   document.getElementById("advancesCount").textContent = String((credit.advances || []).length);
@@ -143,7 +143,7 @@ async function getJsonAllowError(url) {
 }
 function showError(error) {
   const message = error instanceof Error ? error.message : String(error);
-  for (const id of ["tee", "codeHash", "mode", "lenderVault", "insuranceReserve", "fundedJobs", "advancesCount"]) {
+  for (const id of ["tee", "codeHash", "mode", "lenderReceivables", "insuranceReserve", "fundedJobs", "advancesCount"]) {
     document.getElementById(id).textContent = "error";
   }
   document.getElementById("requests").innerHTML = "<tr><td colspan='5'>" + message + "</td></tr>";

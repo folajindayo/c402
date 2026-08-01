@@ -32,8 +32,12 @@ contract C402Erc8004Writer {
     error RegistryMissing();
 
     modifier onlyOwner() {
-        if (msg.sender != owner) revert NotOwner();
+        _onlyOwner();
         _;
+    }
+
+    function _onlyOwner() internal view {
+        if (msg.sender != owner) revert NotOwner();
     }
 
     constructor(address initialOwner, address initialReputationRegistry, address initialValidationRegistry) {

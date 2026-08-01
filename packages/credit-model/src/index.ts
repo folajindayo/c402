@@ -39,25 +39,6 @@ export function assessCredit(input: CreditAssessmentInput, now = new Date()): Cr
   };
 }
 
-export function sampleBankStatement(): CreditAssessmentInput {
-  return {
-    customerId: "cust_demo_001",
-    monthlyIncomeCents: 420000,
-    currentDebtCents: 85000,
-    averageBalanceCents: 260000,
-    overdraftCount90d: 0,
-    missedPaymentCount12m: 0,
-    transactions: [
-      { postedAt: "2026-07-01", description: "Payroll", amountCents: 420000 },
-      { postedAt: "2026-07-02", description: "Rent", amountCents: -120000 },
-      { postedAt: "2026-07-05", description: "Utilities", amountCents: -18500 },
-      { postedAt: "2026-07-08", description: "Groceries", amountCents: -32400 },
-      { postedAt: "2026-07-12", description: "Loan payment", amountCents: -85000 },
-      { postedAt: "2026-07-20", description: "Freelance income", amountCents: 45000 }
-    ]
-  };
-}
-
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }

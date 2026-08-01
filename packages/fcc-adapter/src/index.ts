@@ -1,26 +1,13 @@
 import {
   assertComputePayload,
   assertCreditAssessmentResult,
-  commitment,
   decryptJson,
   encryptJson,
-  envelopeCommitment,
-  generateEncryptionKeyPair,
-  generateSigningKeyPair,
-  objectWithoutSignature,
-  randomHex,
-  signObject,
   type AttestationInfo,
   type ComputePayload,
   type ComputeReceipt,
-  type CreditAssessmentInput,
   type CreditAssessmentResult
 } from "@c402/protocol";
-import {
-  assessCredit,
-  CREDIT_MODEL_CODE_HASH,
-  CREDIT_OUTPUT_SCHEMA
-} from "@c402/credit-model";
 
 export interface ExecuteComputeInput {
   requestId: string;
@@ -38,71 +25,6 @@ export interface ExecuteComputeOutput {
 export interface FccAdapter {
   getAttestation(): Promise<AttestationInfo>;
   executeCreditAssessment(input: ExecuteComputeInput): Promise<ExecuteComputeOutput>;
-}
-
-export interface LocalFccAdapterOptions {
-  teeId?: string;
-  extensionId?: string;
-  codeHash?: string;
-}
-
-export class LocalFccAdapter implements FccAdapter {
-  private readonly encryptionKeys = generateEncryptionKeyPair();
-  private readonly signingKeys = generateSigningKeyPair();
-  private readonly teeId: string;
-  private readonly extensionId: string;
-  private readonly codeHash: string;
-
-  constructor(options: LocalFccAdapterOptions = {}) {
-    this.teeId = options.teeId ?? "local-tee-001";
-    this.extensionId = options.extensionId ?? "credit-score-extension-local";
-    this.codeHash = options.codeHash ?? CREDIT_MODEL_CODE_HASH;
-  }
-
-  async getAttestation(): Promise<AttestationInfo> {
-    return {
-      teeId: this.teeId,
-      extensionId: this.extensionId,
-      codeHash: this.codeHash,
-      inputEncryptionKey: this.encryptionKeys.publicKey,
-      teeSigningKey: this.signingKeys.publicKey,
-      mode: "local",
-      verifiedAt: new Date().toISOString()
-    };
-  }
-
-  async executeCreditAssessment(input: ExecuteComputeInput): Promise<ExecuteComputeOutput> {
-    assertComputePayload(input.payload);
-
-    const statement = decryptJson<CreditAssessmentInput>(this.encryptionKeys.privateKey, input.payload.encryptedInput);
-    const result = assessCredit(statement);
-    assertCreditAssessmentResult(result);
-
-    const encryptedResult = encryptJson(input.payload.clientOutputEncryptionKey, result);
-    const outputCommitment = envelopeCommitment(encryptedResult);
-    const receiptUnsigned = {
-      protocol: "c402" as const,
-      version: 1 as const,
-      requestId: input.requestId,
-      paymentId: input.paymentId,
-      inputCommitment: input.payload.inputCommitment,
-      outputCommitment,
-      codeHash: this.codeHash,
-      teeId: this.teeId,
-      extensionId: this.extensionId,
-      outputSchema: CREDIT_OUTPUT_SCHEMA,
-      status: "success" as const,
-      priceAtomic: input.priceAtomic,
-      timestamp: Math.floor(Date.now() / 1000),
-      settlementTx: `local:${randomHex(12)}`
-    };
-    const receipt: ComputeReceipt = {
-      ...receiptUnsigned,
-      signature: signObject(this.signingKeys.privateKey, receiptUnsigned)
-    };
-
-    return { encryptedResult, outputCommitment, receipt };
-  }
 }
 
 export interface Coston2FccAdapterOptions {
@@ -161,9 +83,6 @@ export class Coston2FccAdapter implements FccAdapter {
       })
     });
 
-    if (commitment(objectWithoutSignature(response.receipt)) !== commitment(objectWithoutSignature(response.receipt))) {
-      throw new Error("unreachable receipt canonicalization check failed");
-    }
     return response;
   }
 
@@ -186,21 +105,13 @@ export class Coston2FccAdapter implements FccAdapter {
 }
 
 export function createFccAdapterFromEnv(env: NodeJS.ProcessEnv): FccAdapter {
-  if (env.C402_FCC_MODE === "coston2") {
-    const proxyUrl = requiredEnv(env, "C402_FCC_PROXY_URL");
-    const expectedCodeHash = requiredEnv(env, "C402_EXPECTED_CODE_HASH");
-    const extensionId = requiredEnv(env, "C402_FCC_EXTENSION_ID");
-    return new Coston2FccAdapter({ proxyUrl, expectedCodeHash, extensionId, teeId: env.C402_FCC_TEE_ID });
+  if (env.C402_FCC_MODE !== "coston2") {
+    throw new Error("C402_FCC_MODE=coston2 is required when C402_ENABLE_COMPUTE=true.");
   }
-
-  if (env.ALLOW_LOCAL_DEMO !== "true") {
-    throw new Error("C402_FCC_MODE=local requires ALLOW_LOCAL_DEMO=true; set C402_FCC_MODE=coston2 for real Flare FCC execution.");
-  }
-
-  return new LocalFccAdapter({
-    codeHash: env.C402_EXPECTED_CODE_HASH || CREDIT_MODEL_CODE_HASH,
-    extensionId: env.C402_FCC_EXTENSION_ID
-  });
+  const proxyUrl = requiredEnv(env, "C402_FCC_PROXY_URL");
+  const expectedCodeHash = requiredEnv(env, "C402_EXPECTED_CODE_HASH");
+  const extensionId = requiredEnv(env, "C402_FCC_EXTENSION_ID");
+  return new Coston2FccAdapter({ proxyUrl, expectedCodeHash, extensionId, teeId: env.C402_FCC_TEE_ID });
 }
 
 export function decodeCreditResult(privateKeyPem: string, output: ExecuteComputeOutput): CreditAssessmentResult {

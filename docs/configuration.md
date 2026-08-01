@@ -7,9 +7,6 @@ The repository must not contain private keys, RPC secrets, database URLs, bearer
 Committed examples:
 
 - `.env.production.example`
-- `flare-extension/scaffold/.env.example`
-- `flare-extension/scaffold/.env.c402.example`
-- `flare-extension/scaffold/config/proxy/*.example`
 
 These files must use placeholders for secrets.
 
@@ -19,9 +16,6 @@ Local runtime files are ignored by `.gitignore`:
 
 - `.env`
 - `.env.*`
-- `flare-extension/scaffold/.env`
-- `flare-extension/scaffold/config/extension.env`
-- `flare-extension/scaffold/config/proxy/extension_proxy.coston*.toml`
 - build outputs, caches, logs, `node_modules`, and generated contract artifacts
 
 ## Production Credit Mode
@@ -30,8 +24,8 @@ Use `.env.production` locally or on the server. Keep FCC disabled until the FCC 
 
 ```sh
 C402_ENABLE_COMPUTE=false
-C402_PAYMENT_MODE=x402-testnet
 C402_PUBLIC_URL=https://api.your-domain.example
+C402_CREDIT_ENDPOINT=https://api.your-domain.example/credit
 C402_NETWORK=eip155:84532
 C402_ASSET=0x036CbD53842c5426634e7929541eC2318f3dCF7e
 C402_PAY_TO=0xYourReceiverWallet
@@ -51,7 +45,7 @@ C402_FCC_TEE_ID=<registered-tee-id>
 C402_EXPECTED_CODE_HASH=<registered-code-hash>
 ```
 
-The helper `flare-extension/scaffold/scripts/c402-export-env.sh` writes `.env.production.fcc.local`, which is ignored. Copy only the needed values into your private deployment environment.
+Copy FCC values only into your private deployment environment or hosting secret manager.
 
 ## Private Keys
 

@@ -77,19 +77,35 @@ contract C402CreditIntent {
     error TransferFailed();
 
     modifier onlyOwner() {
-        if (msg.sender != owner) revert NotOwner();
+        _onlyOwner();
         _;
     }
 
     modifier whenNotPaused() {
-        if (paused) revert PausedError();
+        _whenNotPaused();
         _;
     }
 
     modifier nonReentrant() {
+        _nonReentrantBefore();
+        _;
+        _nonReentrantAfter();
+    }
+
+    function _onlyOwner() internal view {
+        if (msg.sender != owner) revert NotOwner();
+    }
+
+    function _whenNotPaused() internal view {
+        if (paused) revert PausedError();
+    }
+
+    function _nonReentrantBefore() internal {
         if (locked != 1) revert ReentrantCall();
         locked = 2;
-        _;
+    }
+
+    function _nonReentrantAfter() internal {
         locked = 1;
     }
 

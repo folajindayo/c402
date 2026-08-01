@@ -1,10 +1,10 @@
 # c402 FCC Credit Extension
 
-This folder is the live Coston2 extension boundary. Start from Flare's FCC scaffold, then replace the Hello World operation with:
+This folder contains the c402 Coston2 extension boundary. Use it with the current official Flare FCC tooling and wire the handler into the proxy `/action` endpoint.
 
 - `OP_TYPE`: `CREDIT_SCORE`
 - `OP_COMMAND`: `ASSESS`
 - payload: c402 `ComputePayload`
 - result: encrypted c402 output plus signed `ComputeReceipt`
 
-The TypeScript local adapter in `packages/fcc-adapter` is the executable reference for the expected behavior. The Go handler in `extension-tee/main.go` documents the handler contract and should be wired into the official Flare scaffold's `/action` endpoint.
+The API-side adapter in `packages/fcc-adapter` expects the proxy to expose `/info` for attestation metadata and `/action` for execution.
