@@ -12,8 +12,10 @@ Smart contracts should avoid holding large pooled lender balances. The safer pat
 
 - signed credit intents with explicit lender, borrower, supplier, amount, fee, expiry, and receivable ID
 - supplier payment proof before an advance is considered active
+- borrower or sponsor collateral locked before supplier payment is recorded
 - per-intent limits rather than global hot balances
 - short expiries
+- liquidation after deadline/default
 - pause controls
 - repayment-first settlement
 - offchain monitoring for unusual supplier or borrower behavior

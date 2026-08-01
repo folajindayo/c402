@@ -6,6 +6,7 @@ The testnet product shows the finance path:
 
 - funded agent jobs
 - A2A lender-agent matching
+- receivable liens and borrower/sponsor collateral
 - purpose-bound credit requests
 - signed credit offers
 - direct lender-to-supplier payment recording

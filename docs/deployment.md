@@ -49,9 +49,11 @@ docker compose -f deploy/compose/compose.prod.yaml --env-file .env.production up
 - `GET /lenders`
 - `POST /lenders/register`
 - `POST /credit/jobs`
+- `POST /credit/jobs/{jobId}/collateral`
 - `POST /credit/request`
 - `POST /credit/match`
 - `POST /credit/offers/{offerId}/supplier-payment`
 - `POST /credit/jobs/{jobId}/complete`
 - `POST /credit/jobs/{jobId}/fail`
+- `POST /credit/advances/{advanceId}/liquidate`
 - `POST /credit-score` when FCC is enabled

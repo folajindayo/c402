@@ -49,6 +49,15 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/credit/jobs") {
       return sendJson(res, 201, credit.createFundedJob(asFundedJobInput(await readJson(req))));
     }
+    if (req.method === "POST" && url.pathname.startsWith("/credit/jobs/") && url.pathname.endsWith("/collateral")) {
+      const jobId = decodeURIComponent(url.pathname.slice("/credit/jobs/".length, -"/collateral".length));
+      const body = await readJson(req);
+      return sendJson(res, 201, credit.depositCollateral({
+        jobId,
+        pledgor: requiredString(body, "pledgor"),
+        amountAtomic: requiredString(body, "amountAtomic")
+      }));
+    }
     if (req.method === "POST" && url.pathname === "/credit/request") {
       return sendJson(res, 200, credit.requestCredit(asCreditRequestInput(await readJson(req))));
     }
@@ -74,6 +83,11 @@ const server = createServer(async (req, res) => {
       const jobId = decodeURIComponent(url.pathname.slice("/credit/jobs/".length, -"/fail".length));
       const body = await readJson(req);
       return sendJson(res, 200, credit.failJob(jobId, typeof body.advanceId === "string" ? body.advanceId : undefined));
+    }
+    if (req.method === "POST" && url.pathname.startsWith("/credit/advances/") && url.pathname.endsWith("/liquidate")) {
+      const advanceId = decodeURIComponent(url.pathname.slice("/credit/advances/".length, -"/liquidate".length));
+      const body = await readJson(req);
+      return sendJson(res, 200, credit.liquidateAdvance(advanceId, typeof body.reason === "string" ? body.reason : undefined));
     }
     if (req.method === "GET" && url.pathname.startsWith("/receipts/")) {
       if (!service) return sendComputeDisabled(res);
@@ -177,6 +191,12 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
       },
       {
         method: "POST",
+        path: "/credit/jobs/{jobId}/collateral",
+        price: "free",
+        purpose: "Post borrower or sponsor collateral that can be liquidated if repayment terms are broken."
+      },
+      {
+        method: "POST",
         path: "/credit/offers/{offerId}/supplier-payment",
         price: "free",
         purpose: "Record a lender-to-supplier x402 payment before repayment is claimed from the receivable."
@@ -186,6 +206,12 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
         path: "/credit/jobs/{jobId}/complete",
         price: "free",
         purpose: "Complete a job and route repayment before agent proceeds."
+      },
+      {
+        method: "POST",
+        path: "/credit/advances/{advanceId}/liquidate",
+        price: "free",
+        purpose: "Liquidate locked collateral and reserve after missed deadline or default."
       },
       {
         method: "POST",
@@ -221,6 +247,9 @@ function openApi(baseUrl: string): Record<string, unknown> {
       "/credit/request": {
         post: { summary: "Request credit", responses: { "200": { description: "Underwriting decision and optional offer" } } }
       },
+      "/credit/jobs/{jobId}/collateral": {
+        post: { summary: "Post collateral for a receivable", responses: { "201": { description: "Collateral position" } } }
+      },
       "/lenders": {
         get: { summary: "List active lender agents", responses: { "200": { description: "Lender profiles" } } }
       },
@@ -238,6 +267,9 @@ function openApi(baseUrl: string): Record<string, unknown> {
       },
       "/credit/jobs/{jobId}/fail": {
         post: { summary: "Fail a job and suspend credit", responses: { "200": { description: "Passport event" } } }
+      },
+      "/credit/advances/{advanceId}/liquidate": {
+        post: { summary: "Liquidate collateral", responses: { "200": { description: "Liquidation receipt" } } }
       },
       "/credit-score": {
         post: { summary: "Optional x402/c402 confidential compute endpoint", responses: { "200": { description: "Encrypted result" }, "402": { description: "Payment required" }, "503": { description: "Compute disabled" } } }

@@ -59,6 +59,15 @@ export interface FundedJob {
   createdAt: string;
 }
 
+export interface CollateralPosition {
+  jobId: string;
+  pledgor: string;
+  amountAtomic: string;
+  lockedAtomic: string;
+  status: "locked" | "released" | "liquidated";
+  updatedAt: string;
+}
+
 export interface CreditRequest {
   requestId: string;
   agent: string;
@@ -92,9 +101,26 @@ export interface CreditAdvance {
   fundingSource?: "pooled-vault" | "direct-lender";
   supplier: string;
   amountAtomic: string;
+  feeAtomic: string;
+  collateralLockedAtomic: string;
+  deadline: string;
   status: CreditStatus;
   paidAt: string;
   supplierPaymentId: string;
+}
+
+export interface ReceivableLien {
+  lienId: string;
+  jobId: string;
+  advanceId: string;
+  lender: string;
+  borrower: string;
+  principalAtomic: string;
+  feeAtomic: string;
+  collateralLockedAtomic: string;
+  seniorClaimAtomic: string;
+  status: "active" | "released" | "defaulted" | "liquidated";
+  createdAt: string;
 }
 
 export interface RepaymentReceipt {
@@ -107,6 +133,18 @@ export interface RepaymentReceipt {
   agentProceedsAtomic: string;
   reserveAtomic: string;
   status: "repaid" | "defaulted";
+  createdAt: string;
+  signature: string;
+}
+
+export interface LiquidationReceipt {
+  liquidationId: string;
+  jobId: string;
+  advanceId: string;
+  lender: string;
+  collateralPaidAtomic: string;
+  reservePaidAtomic: string;
+  shortfallAtomic: string;
   createdAt: string;
   signature: string;
 }
@@ -255,6 +293,28 @@ export function createRepaymentReceipt(input: {
     agentProceedsAtomic: agentProceeds.toString(),
     reserveAtomic: reserve.toString(),
     status: "repaid" as const,
+    createdAt: new Date().toISOString()
+  };
+  return { ...unsigned, signature: signObject(input.signerPrivateKeyPem, unsigned) };
+}
+
+export function createLiquidationReceipt(input: {
+  jobId: string;
+  advanceId: string;
+  lender: string;
+  collateralPaidAtomic: string;
+  reservePaidAtomic: string;
+  shortfallAtomic: string;
+  signerPrivateKeyPem: string;
+}): LiquidationReceipt {
+  const unsigned = {
+    liquidationId: randomHex(16),
+    jobId: input.jobId,
+    advanceId: input.advanceId,
+    lender: input.lender,
+    collateralPaidAtomic: input.collateralPaidAtomic,
+    reservePaidAtomic: input.reservePaidAtomic,
+    shortfallAtomic: input.shortfallAtomic,
     createdAt: new Date().toISOString()
   };
   return { ...unsigned, signature: signObject(input.signerPrivateKeyPem, unsigned) };

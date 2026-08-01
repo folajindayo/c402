@@ -4,6 +4,7 @@ import {
   createCreditRequest,
   createErc8004CreditFeedback,
   createErc8004CreditValidationRequest,
+  createLiquidationReceipt,
   createRepaymentReceipt,
   formatAtomic,
   generateSigningKeyPair,
@@ -16,13 +17,16 @@ import {
   type CreditAdvance,
   type CreditOffer,
   type CreditRequest,
+  type CollateralPosition,
   type Erc8004AgentRef,
   type Erc8004FeedbackSignal,
   type Erc8004ValidationRequest,
   type FundedJob,
   type LenderMatch,
   type LenderProfile,
+  type LiquidationReceipt,
   type Purpose,
+  type ReceivableLien,
   type RepaymentReceipt,
   type SpendingPolicy,
   type UnderwritingDecision
@@ -35,12 +39,16 @@ export interface CreditFlowState {
   lenders: LenderProfile[];
   matches: LenderMatch[];
   advances: CreditAdvance[];
+  liens: ReceivableLien[];
+  collateral: CollateralPosition[];
   repayments: RepaymentReceipt[];
+  liquidations: LiquidationReceipt[];
   passport: AgentCreditPassportEvent[];
   erc8004Feedback: Erc8004FeedbackSignal[];
   erc8004ValidationRequests: Erc8004ValidationRequest[];
   insuranceReserveAtomic: string;
   directLenderReceivables: Array<{ lender: string; amountAtomic: string }>;
+  lenderShortfalls: Array<{ lender: string; amountAtomic: string }>;
 }
 
 export interface AgentCreditServiceOptions {
@@ -57,12 +65,17 @@ export class AgentCreditService {
   private readonly lenders = new Map<string, LenderProfile>();
   private readonly matches = new Map<string, LenderMatch>();
   private readonly advances = new Map<string, CreditAdvance>();
+  private readonly liens = new Map<string, ReceivableLien>();
+  private readonly collateral = new Map<string, CollateralPosition>();
   private readonly repayments = new Map<string, RepaymentReceipt>();
+  private readonly liquidations = new Map<string, LiquidationReceipt>();
   private readonly passport: AgentCreditPassportEvent[] = [];
   private readonly erc8004Feedback: Erc8004FeedbackSignal[] = [];
   private readonly erc8004ValidationRequests: Erc8004ValidationRequest[] = [];
   private readonly directLenderReceivables = new Map<string, bigint>();
+  private readonly lenderShortfalls = new Map<string, bigint>();
   private insuranceReserve = 0n;
+  private readonly minCollateralBps = 2000;
 
   constructor(private readonly options: AgentCreditServiceOptions = {}) {}
 
@@ -94,6 +107,27 @@ export class AgentCreditService {
     };
     this.jobs.set(job.jobId, job);
     return job;
+  }
+
+  depositCollateral(input: { jobId: string; pledgor: string; amountAtomic: string }): CollateralPosition {
+    const job = this.getJob(input.jobId);
+    if (job.status !== "funded" && job.status !== "accepted") {
+      throw new C402Error("job_not_fundable", "collateral can only be posted against a funded job", 409);
+    }
+    const amount = parseAtomic(input.amountAtomic, "amountAtomic");
+    const existing = this.collateral.get(input.jobId);
+    const nextAmount = amount + BigInt(existing?.amountAtomic ?? "0");
+    const nextLocked = BigInt(existing?.lockedAtomic ?? "0");
+    const position: CollateralPosition = {
+      jobId: input.jobId,
+      pledgor: existing?.pledgor ?? input.pledgor,
+      amountAtomic: nextAmount.toString(),
+      lockedAtomic: nextLocked.toString(),
+      status: "locked",
+      updatedAt: new Date().toISOString()
+    };
+    this.collateral.set(input.jobId, position);
+    return position;
   }
 
   requestCredit(input: {
@@ -242,11 +276,28 @@ export class AgentCreditService {
       fundingSource: "direct-lender",
       supplier: request.supplier,
       amountAtomic: offer.approvedAmountAtomic,
+      feeAtomic: offer.feeAtomic,
+      collateralLockedAtomic: this.lockCollateral(request.repaymentSource, offer.approvedAmountAtomic),
+      deadline: offer.expiresAt,
       status: "advanced",
       paidAt: new Date().toISOString(),
       supplierPaymentId: input.supplierPaymentId
     };
     this.advances.set(advance.advanceId, advance);
+    const lien: ReceivableLien = {
+      lienId: `lien-${offer.requestId}`,
+      jobId: request.repaymentSource,
+      advanceId: advance.advanceId,
+      lender: input.lender,
+      borrower: offer.agent,
+      principalAtomic: offer.approvedAmountAtomic,
+      feeAtomic: offer.feeAtomic,
+      collateralLockedAtomic: advance.collateralLockedAtomic,
+      seniorClaimAtomic: (BigInt(offer.approvedAmountAtomic) + BigInt(offer.feeAtomic)).toString(),
+      status: "active",
+      createdAt: new Date().toISOString()
+    };
+    this.liens.set(lien.lienId, lien);
     if (match) {
       const lender = this.lenders.get(match.lenderId);
       if (lender) {
@@ -288,6 +339,7 @@ export class AgentCreditService {
       throw new C402Error("unsupported_funding_source", "repayment requires a direct lender advance", 409);
     }
     this.insuranceReserve += BigInt(receipt.reserveAtomic);
+    this.releaseLienAndCollateral(job.jobId, advance.advanceId);
     advance.status = "repaid";
     job.status = "settled";
     const event: AgentCreditPassportEvent = {
@@ -311,6 +363,67 @@ export class AgentCreditService {
     return receipt;
   }
 
+  liquidateAdvance(advanceId: string, reason = "deadline_or_default"): LiquidationReceipt {
+    const advance = this.getAdvance(advanceId);
+    if (advance.status !== "advanced" && advance.status !== "defaulted") {
+      throw new C402Error("advance_not_liquidatable", "only active or defaulted advances can be liquidated", 409);
+    }
+    if (advance.status === "advanced" && Date.parse(advance.deadline) > Date.now()) {
+      throw new C402Error("advance_not_matured", "advance deadline has not passed", 409);
+    }
+    if (!advance.lender) {
+      throw new C402Error("missing_lender", "advance has no lender", 409);
+    }
+    const lien = this.getLienForAdvance(advance.advanceId);
+    const collateral = this.collateral.get(lien.jobId);
+    const seniorClaim = BigInt(lien.seniorClaimAtomic);
+    const lockedCollateral = BigInt(collateral?.lockedAtomic ?? "0");
+    const collateralPaid = lockedCollateral > seniorClaim ? seniorClaim : lockedCollateral;
+    const remainingAfterCollateral = seniorClaim - collateralPaid;
+    const reservePaid = this.insuranceReserve > remainingAfterCollateral ? remainingAfterCollateral : this.insuranceReserve;
+    const shortfall = remainingAfterCollateral - reservePaid;
+
+    if (collateral) {
+      collateral.lockedAtomic = "0";
+      collateral.amountAtomic = (BigInt(collateral.amountAtomic) - collateralPaid).toString();
+      collateral.status = collateralPaid > 0n ? "liquidated" : collateral.status;
+      collateral.updatedAt = new Date().toISOString();
+    }
+    this.insuranceReserve -= reservePaid;
+    this.directLenderReceivables.set(advance.lender, (this.directLenderReceivables.get(advance.lender) ?? 0n) + collateralPaid + reservePaid);
+    if (shortfall > 0n) {
+      this.lenderShortfalls.set(advance.lender, (this.lenderShortfalls.get(advance.lender) ?? 0n) + shortfall);
+    }
+    advance.status = "defaulted";
+    lien.status = "liquidated";
+    const job = this.getJob(lien.jobId);
+    job.status = "failed";
+
+    const receipt = createLiquidationReceipt({
+      jobId: lien.jobId,
+      advanceId: advance.advanceId,
+      lender: advance.lender,
+      collateralPaidAtomic: collateralPaid.toString(),
+      reservePaidAtomic: reservePaid.toString(),
+      shortfallAtomic: shortfall.toString(),
+      signerPrivateKeyPem: this.signer.privateKey
+    });
+    this.liquidations.set(receipt.liquidationId, receipt);
+
+    const event: AgentCreditPassportEvent = {
+      agent: job.agent,
+      jobId: job.jobId,
+      event: "credit_suspended",
+      scoreDelta: -25,
+      creditLimitAtomic: "0",
+      createdAt: new Date().toISOString()
+    };
+    this.passport.push(event);
+    this.recordErc8004Feedback(job, event, advance);
+    void reason;
+    return receipt;
+  }
+
   failJob(jobId: string, advanceId?: string): AgentCreditPassportEvent {
     const job = this.getJob(jobId);
     job.status = "failed";
@@ -318,6 +431,8 @@ export class AgentCreditService {
       const advance = this.getAdvance(advanceId);
       if (advance.status === "advanced") {
         advance.status = "defaulted";
+        const lien = this.getLienForAdvance(advance.advanceId);
+        lien.status = "defaulted";
       }
     }
     const event: AgentCreditPassportEvent = {
@@ -341,7 +456,10 @@ export class AgentCreditService {
       lenders: Array.from(this.lenders.values()),
       matches: Array.from(this.matches.values()),
       advances: Array.from(this.advances.values()),
+      liens: Array.from(this.liens.values()),
+      collateral: Array.from(this.collateral.values()),
       repayments: Array.from(this.repayments.values()),
+      liquidations: Array.from(this.liquidations.values()),
       passport: this.passport,
       erc8004Feedback: this.erc8004Feedback,
       erc8004ValidationRequests: this.erc8004ValidationRequests,
@@ -350,9 +468,14 @@ export class AgentCreditService {
         lender,
         amountAtomic: amount.toString()
       })),
+      lenderShortfalls: Array.from(this.lenderShortfalls.entries()).map(([lender, amount]) => ({
+        lender,
+        amountAtomic: amount.toString()
+      })),
       formatted: {
         insuranceReserve: `${formatAtomic(this.insuranceReserve)} USDC`,
-        directLenderReceivables: Array.from(this.directLenderReceivables.entries()).map(([lender, amount]) => `${lender}: ${formatAtomic(amount)} USDC`)
+        directLenderReceivables: Array.from(this.directLenderReceivables.entries()).map(([lender, amount]) => `${lender}: ${formatAtomic(amount)} USDC`),
+        lenderShortfalls: Array.from(this.lenderShortfalls.entries()).map(([lender, amount]) => `${lender}: ${formatAtomic(amount)} USDC`)
       }
     };
   }
@@ -379,6 +502,39 @@ export class AgentCreditService {
     const advance = this.advances.get(advanceId);
     if (!advance) throw new C402Error("credit_advance_not_found", `advance ${advanceId} not found`, 404);
     return advance;
+  }
+
+  private getLienForAdvance(advanceId: string): ReceivableLien {
+    const lien = Array.from(this.liens.values()).find((item) => item.advanceId === advanceId);
+    if (!lien) throw new C402Error("lien_not_found", `lien for advance ${advanceId} not found`, 404);
+    return lien;
+  }
+
+  private lockCollateral(jobId: string, principalAtomic: string): string {
+    const position = this.collateral.get(jobId);
+    const required = (BigInt(principalAtomic) * BigInt(this.minCollateralBps)) / 10_000n;
+    const available = BigInt(position?.amountAtomic ?? "0") - BigInt(position?.lockedAtomic ?? "0");
+    if (available < required) {
+      throw new C402Error("collateral_insufficient", `job requires at least ${required.toString()} collateral atomic units for this advance`, 409);
+    }
+    if (position) {
+      position.lockedAtomic = (BigInt(position.lockedAtomic) + required).toString();
+      position.updatedAt = new Date().toISOString();
+    }
+    return required.toString();
+  }
+
+  private releaseLienAndCollateral(jobId: string, advanceId: string): void {
+    const lien = this.getLienForAdvance(advanceId);
+    lien.status = "released";
+    const position = this.collateral.get(jobId);
+    if (position) {
+      const locked = BigInt(position.lockedAtomic);
+      const release = BigInt(lien.collateralLockedAtomic);
+      position.lockedAtomic = (locked > release ? locked - release : 0n).toString();
+      position.status = "released";
+      position.updatedAt = new Date().toISOString();
+    }
   }
 
   private recordErc8004Feedback(

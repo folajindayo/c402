@@ -27,10 +27,12 @@ The credit product does not require Flare Confidential Compute for the core test
 3. Lender agents register available liquidity and credit policy.
 4. c402 signs a credit offer if the supplier, amount, margin, and job state are valid.
 5. c402 matches the offer to the best eligible lender agent.
-6. The matched lender pays the supplier directly, using x402 or an onchain payment.
-7. c402 records the supplier payment ID.
-8. When the job completes, repayment is routed before agent proceeds.
-9. ERC-8004-compatible reputation evidence is emitted from the repayment or default event.
+6. The borrower or sponsor posts collateral against the receivable.
+7. The matched lender pays the supplier directly, using x402 or an onchain payment.
+8. c402 records the supplier payment ID and creates a senior lien.
+9. When the job completes, repayment is routed before agent proceeds.
+10. If terms are broken, collateral and reserve can be liquidated for the lender.
+11. ERC-8004-compatible reputation evidence is emitted from the repayment or default event.
 
 FCC is optional and is used for private credit scoring/private underwriting through `/credit-score`. Enable it only when a real Coston2 FCC proxy is deployed and configured.
 
@@ -112,12 +114,28 @@ curl -X POST http://127.0.0.1:4021/credit/match \
   -d '{"offerId":"offer-id"}'
 ```
 
+Post collateral against the receivable:
+
+```bash
+curl -X POST http://127.0.0.1:4021/credit/jobs/job-id/collateral \
+  -H 'content-type: application/json' \
+  -d '{"pledgor":"0xBorrowerAgent","amountAtomic":"200000"}'
+```
+
 Record lender-to-supplier payment:
 
 ```bash
 curl -X POST http://127.0.0.1:4021/credit/offers/offer-id/supplier-payment \
   -H 'content-type: application/json' \
   -d '{"lender":"0xLender","supplierPaymentId":"x402-or-chain-payment-id"}'
+```
+
+Liquidate if the advance misses its deadline or defaults:
+
+```bash
+curl -X POST http://127.0.0.1:4021/credit/advances/adv-request-id/liquidate \
+  -H 'content-type: application/json' \
+  -d '{"reason":"deadline_missed"}'
 ```
 
 Complete and repay:

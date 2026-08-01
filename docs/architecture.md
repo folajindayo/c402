@@ -9,7 +9,7 @@ c402 has two independent layers:
 
 The production credit invariant is simple: lender funds do not enter the borrower wallet.
 
-Buyer funds a job receivable. The agent requests credit for a specific supplier and purpose. Lender agents register liquidity and policy. The service signs an offer only if the job is funded, the supplier is allowed, the advance is within policy, and the job still has enough margin. c402 matches the offer to the best eligible lender agent. The lender pays the supplier directly and records the supplier payment identifier. On job completion, repayment is calculated before agent proceeds.
+Buyer funds a job receivable. The agent requests credit for a specific supplier and purpose. Lender agents register liquidity and policy. The service signs an offer only if the job is funded, the supplier is allowed, the advance is within policy, and the job still has enough margin. c402 matches the offer to the best eligible lender agent. The borrower or sponsor posts collateral, then the lender pays the supplier directly and records the supplier payment identifier. c402 creates a senior lien against the receivable. On job completion, repayment is calculated before agent proceeds. On missed deadline or default, locked collateral and reserve can be liquidated for the lender, with any shortfall recorded against the borrower reputation.
 
 This limits loss if an agent fails or if an agent wallet is compromised, because the borrower never receives unrestricted loan principal.
 
@@ -18,6 +18,7 @@ This limits loss if an agent fails or if an agent wallet is compromised, because
 - API service: exposes credit and optional compute endpoints.
 - Credit state machine: jobs, requests, offers, advances, repayments, passport events.
 - A2A lender matcher: ranks lender agents by eligibility, fee fit, liquidity headroom, risk policy, and reputation.
+- Lien and collateral engine: locks borrower/sponsor bond, creates senior repayment claims, releases collateral on repayment, and liquidates on default.
 - x402 adapter: verifies and settles payment payloads through an x402 facilitator.
 - ERC-8004 writer contract: records credit feedback hashes for agent reputation.
 - Credit intent contract: binds borrower, lender, supplier, receivable, fee, expiry, and supplier payment proof.
