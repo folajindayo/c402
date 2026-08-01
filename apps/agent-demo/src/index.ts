@@ -30,13 +30,14 @@ if (mode === "confidential-compute" || mode === "x402") {
     }
   }, null, 2));
 } else {
-  const success = await postJson(`${baseUrl}/credit/demo/success`);
+  const success = await postJson(`${baseUrl}/credit/demo/direct-success`);
   const failure = await postJson(`${baseUrl}/credit/demo/failure`);
   const state = await fetch(`${baseUrl}/credit/state`).then(response => response.json());
 
   console.log(JSON.stringify({
     story: "Just-in-Time x402 Credit",
     success: {
+      moneyPath: success.moneyPath,
       job: success.job,
       request: success.request,
       decision: success.decision,

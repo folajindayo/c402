@@ -57,6 +57,8 @@ export interface CreditAdvance {
   advanceId: string;
   offerId: string;
   requestId: string;
+  lender?: string;
+  fundingSource?: "pooled-vault" | "direct-lender";
   supplier: string;
   amountAtomic: string;
   status: CreditStatus;

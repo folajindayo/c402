@@ -86,6 +86,7 @@ The core hackathon endpoints are:
 - `POST /credit/jobs/:jobId/complete`: complete the job and repay principal plus fee before agent proceeds.
 - `POST /credit/jobs/:jobId/fail`: mark failure and suspend/penalize the agent credit passport.
 - `POST /credit/demo/success`: seed the complete successful hackathon path.
+- `POST /credit/demo/direct-success`: seed the safer direct lender-to-supplier path.
 - `POST /credit/demo/failure`: seed the failed-job path.
 - `GET /credit/state`: inspect jobs, requests, offers, advances, repayments, passport events, lender vault, and reserve.
 

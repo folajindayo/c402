@@ -59,6 +59,9 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/credit/demo/success") {
       return sendJson(res, 200, credit.seedHackathonSuccess());
     }
+    if (req.method === "POST" && url.pathname === "/credit/demo/direct-success") {
+      return sendJson(res, 200, credit.seedDirectSupplierSuccess());
+    }
     if (req.method === "POST" && url.pathname === "/credit/demo/failure") {
       return sendJson(res, 200, credit.seedHackathonFailure());
     }
@@ -154,7 +157,13 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
         method: "POST",
         path: "/credit/offers/{offerId}/accept",
         price: "free",
-        purpose: "Accept a signed credit offer and pay the supplier path."
+        purpose: "Accept a signed credit offer using the pooled-vault demo path."
+      },
+      {
+        method: "POST",
+        path: "/credit/demo/direct-success",
+        price: "free",
+        purpose: "Demonstrate the safer direct lender-wallet-to-supplier credit path."
       },
       {
         method: "POST",
@@ -198,6 +207,9 @@ function openApi(baseUrl: string): Record<string, unknown> {
       },
       "/credit/offers/{offerId}/accept": {
         post: { summary: "Accept a credit offer", responses: { "200": { description: "Supplier advance" } } }
+      },
+      "/credit/demo/direct-success": {
+        post: { summary: "Run the direct lender-to-supplier demo flow", responses: { "200": { description: "Direct supplier payment and repayment-first receipt" } } }
       },
       "/credit/jobs/{jobId}/complete": {
         post: { summary: "Complete and repay a job", responses: { "200": { description: "Repayment receipt" } } }

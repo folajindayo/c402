@@ -137,6 +137,23 @@ test("hackathon credit service demonstrates success and failed-job paths", () =>
   assert.equal(state.erc8004ValidationRequests[0]?.payload.kind, "repayment-receipt");
 });
 
+test("direct lender-to-supplier flow keeps pooled vault funds out of the advance", () => {
+  const service = new AgentCreditService();
+  const before = service.state();
+  const success = service.seedDirectSupplierSuccess();
+  const after = service.state();
+
+  assert.equal(success.advance.fundingSource, "direct-lender");
+  assert.equal(success.advance.lender, "0xLender");
+  assert.match(success.advance.supplierPaymentId, /^x402-direct:/);
+  assert.equal(success.repayment.principalAtomic, "1000000");
+  assert.equal(success.repayment.feeAtomic, "50000");
+  assert.equal(success.repayment.reserveAtomic, "10000");
+  assert.equal(success.repayment.agentProceedsAtomic, "8950000");
+  assert.equal(after.lenderVaultAtomic, before.lenderVaultAtomic);
+  assert.deepEqual(after.directLenderReceivables, [{ lender: "0xLender", amountAtomic: "1040000" }]);
+});
+
 test("erc-8004 feedback payload commits to c402 repayment evidence", () => {
   const feedback = createErc8004CreditFeedback({
     agentRef: { agentRegistry: "eip155:114:0xRegistry", agentId: "4021" },
