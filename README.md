@@ -41,11 +41,19 @@ FCC is optional and is used for private credit scoring/private underwriting thro
 c402 supports four credit products through the same request and lender-matching flow:
 
 - `job-backed`: borrow against a funded job receivable. The job escrow repays first when the job completes.
-- `asset-backed`: borrow against verified collateral value, such as tokenized collateral or future FXRP-style collateral support. The backing source records value, lock amount, verifier, and advance rate.
-- `subscription-backed`: borrow against verified recurring revenue, with a lower advance rate because future subscription income can churn.
-- `earnings-backed`: borrow against verified historical x402 earnings, with a middle advance rate and repayment sweep semantics.
+- `asset-backed`: borrow against verified collateral value, such as tokenized collateral or future FXRP-style collateral support. The backing source records value, hard liquidation value, lock amount, verifier, and advance rate.
+- `subscription-backed`: borrow against verified recurring revenue routed through c402. It must include hard liquidation value, such as escrowed subscription receipts, a sponsor bond, or a sweep-router reserve.
+- `earnings-backed`: borrow against verified historical x402 earnings routed through c402. It must include hard liquidation value, such as an earnings reserve, owner bond, or sweep-router balance.
 
 For non-job products, register a source first with `POST /credit/backing-sources`, then use its `sourceId` as `repaymentSource` in `POST /credit/request`.
+
+The approval invariant is:
+
+```text
+principal + borrower maximum fee <= liquidatable recovery value
+```
+
+Projected revenue can size a credit line, but it cannot replace collateral. If a subscription-backed or earnings-backed source has `liquidationValueAtomic: "0"`, borrowing against it is declined.
 
 ## Environment
 
@@ -114,7 +122,7 @@ Register a non-job backing source:
 ```bash
 curl -X POST http://127.0.0.1:4021/credit/backing-sources \
   -H 'content-type: application/json' \
-  -d '{"sourceId":"asset-source-1","productType":"asset-backed","agent":"0xAgent","valueAtomic":"5000000","advanceRateBps":6500,"evidenceId":"ftso-proof-1"}'
+  -d '{"sourceId":"asset-source-1","productType":"asset-backed","agent":"0xAgent","valueAtomic":"5000000","liquidationValueAtomic":"5000000","advanceRateBps":6500,"evidenceId":"ftso-proof-1"}'
 ```
 
 Request against that source:

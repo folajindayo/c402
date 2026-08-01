@@ -68,6 +68,7 @@ export interface CreditBackingSource {
   asset: string;
   network: string;
   valueAtomic: string;
+  liquidationValueAtomic: string;
   lockedAtomic: string;
   advanceRateBps: number;
   verifier: "ftso" | "fdc" | "x402" | "operator";
@@ -253,11 +254,14 @@ export function underwriteBackingSource(source: CreditBackingSource, request: Cr
   const maxAdvance = parseAtomic(policy.maxAdvanceAtomic, "maxAdvanceAtomic");
   const maximumFee = parseAtomic(request.maximumFeeAtomic, "maximumFeeAtomic");
   const value = parseAtomic(source.valueAtomic, "valueAtomic");
+  const liquidationValue = parseAtomic(source.liquidationValueAtomic, "liquidationValueAtomic");
   const locked = parseAtomic(source.lockedAtomic, "lockedAtomic");
   const available = ((value * BigInt(source.advanceRateBps)) / 10_000n) - locked;
+  const liquidationAvailable = liquidationValue - locked;
 
   if (amount > maxAdvance) return decline("request exceeds policy max advance");
   if (amount + maximumFee > available) return decline("request exceeds verified backing capacity");
+  if (amount + maximumFee > liquidationAvailable) return decline("request has insufficient hard liquidation value");
 
   const utilizationBps = Number(((amount + maximumFee) * 10_000n) / (available || 1n));
   return {

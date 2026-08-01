@@ -122,6 +122,7 @@ export class AgentCreditService {
     asset?: string;
     network?: string;
     valueAtomic: string;
+    liquidationValueAtomic?: string;
     advanceRateBps?: number;
     verifier?: CreditBackingSource["verifier"];
     evidenceId: string;
@@ -134,6 +135,7 @@ export class AgentCreditService {
       asset: input.asset ?? this.options.asset ?? "USDC",
       network: input.network ?? this.options.network ?? "eip155:84532",
       valueAtomic: input.valueAtomic,
+      liquidationValueAtomic: input.liquidationValueAtomic ?? defaultLiquidationValue(input.productType, input.valueAtomic),
       lockedAtomic: "0",
       advanceRateBps: input.advanceRateBps ?? defaultAdvanceRate(input.productType),
       verifier: input.verifier ?? defaultVerifier(input.productType),
@@ -142,6 +144,7 @@ export class AgentCreditService {
       updatedAt: new Date().toISOString()
     };
     parseAtomic(source.valueAtomic, "valueAtomic");
+    parseAtomic(source.liquidationValueAtomic, "liquidationValueAtomic");
     if (source.advanceRateBps <= 0 || source.advanceRateBps > 10_000) {
       throw new C402Error("invalid_advance_rate", "advanceRateBps must be between 1 and 10000", 400);
     }
@@ -310,6 +313,7 @@ export class AgentCreditService {
       throw new C402Error("lender_mismatch", "supplier payment lender does not match the selected lender agent", 409);
     }
     const feeAtomic = match?.feeAtomic ?? offer.feeAtomic;
+    const seniorClaimAtomic = (BigInt(offer.approvedAmountAtomic) + BigInt(feeAtomic)).toString();
     const advance: CreditAdvance = {
       advanceId: `adv-${offer.requestId}`,
       offerId: offer.offerId,
@@ -320,7 +324,7 @@ export class AgentCreditService {
       amountAtomic: offer.approvedAmountAtomic,
       feeAtomic,
       collateralLockedAtomic: this.lockCollateral(request.repaymentSource, offer.approvedAmountAtomic),
-      backingLockedAtomic: this.lockBackingSource(request),
+      backingLockedAtomic: this.lockBackingSource(request, seniorClaimAtomic),
       deadline: offer.expiresAt,
       status: "advanced",
       paidAt: new Date().toISOString(),
@@ -337,7 +341,7 @@ export class AgentCreditService {
       principalAtomic: offer.approvedAmountAtomic,
       feeAtomic,
       collateralLockedAtomic: advance.collateralLockedAtomic,
-      seniorClaimAtomic: (BigInt(offer.approvedAmountAtomic) + BigInt(feeAtomic)).toString(),
+      seniorClaimAtomic,
       status: "active",
       createdAt: new Date().toISOString()
     };
@@ -437,8 +441,10 @@ export class AgentCreditService {
     const lockedCollateral = BigInt(collateral?.lockedAtomic ?? "0");
     const collateralPaid = lockedCollateral > seniorClaim ? seniorClaim : lockedCollateral;
     const remainingAfterCollateral = seniorClaim - collateralPaid;
-    const reservePaid = this.insuranceReserve > remainingAfterCollateral ? remainingAfterCollateral : this.insuranceReserve;
-    const shortfall = remainingAfterCollateral - reservePaid;
+    const backingPaid = this.liquidateBackingValue(lien, remainingAfterCollateral);
+    const remainingAfterBacking = remainingAfterCollateral - backingPaid;
+    const reservePaid = this.insuranceReserve > remainingAfterBacking ? remainingAfterBacking : this.insuranceReserve;
+    const shortfall = remainingAfterBacking - reservePaid;
 
     if (collateral) {
       collateral.lockedAtomic = "0";
@@ -447,7 +453,7 @@ export class AgentCreditService {
       collateral.updatedAt = new Date().toISOString();
     }
     this.insuranceReserve -= reservePaid;
-    this.directLenderReceivables.set(advance.lender, (this.directLenderReceivables.get(advance.lender) ?? 0n) + collateralPaid + reservePaid);
+    this.directLenderReceivables.set(advance.lender, (this.directLenderReceivables.get(advance.lender) ?? 0n) + collateralPaid + backingPaid + reservePaid);
     if (shortfall > 0n) {
       this.lenderShortfalls.set(advance.lender, (this.lenderShortfalls.get(advance.lender) ?? 0n) + shortfall);
     }
@@ -460,7 +466,7 @@ export class AgentCreditService {
       repaymentSource: lien.repaymentSource,
       advanceId: advance.advanceId,
       lender: advance.lender,
-      collateralPaidAtomic: collateralPaid.toString(),
+      collateralPaidAtomic: (collateralPaid + backingPaid).toString(),
       reservePaidAtomic: reservePaid.toString(),
       shortfallAtomic: shortfall.toString(),
       signerPrivateKeyPem: this.signer.privateKey
@@ -553,7 +559,19 @@ export class AgentCreditService {
 
   private underwrite(request: CreditRequest): UnderwritingDecision {
     if (request.productType === "job-backed") {
-      return underwriteReceivable(this.getJob(request.repaymentSource), request, this.policy);
+      const decision = underwriteReceivable(this.getJob(request.repaymentSource), request, this.policy);
+      if (!decision.approved) return decision;
+      const required = BigInt(request.amountAtomic) + BigInt(request.maximumFeeAtomic);
+      const available = BigInt(this.getJob(request.repaymentSource).escrowAmountAtomic) - this.activeClaimsForSource(request.repaymentSource);
+      if (required > available) {
+        return {
+          ...decision,
+          approved: false,
+          maximumCreditAtomic: "0",
+          reason: "repayment source is already pledged to other active liens"
+        };
+      }
+      return decision;
     }
     return underwriteBackingSource(this.getBackingSource(request.repaymentSource), request, this.policy);
   }
@@ -610,20 +628,20 @@ export class AgentCreditService {
     }
   }
 
-  private lockBackingSource(request: CreditRequest): string {
+  private lockBackingSource(request: CreditRequest, seniorClaimAtomic: string): string {
     if (request.productType === "job-backed") return "0";
     const source = this.getBackingSource(request.repaymentSource);
-    const amount = BigInt(request.amountAtomic);
-    source.lockedAtomic = (BigInt(source.lockedAtomic) + amount).toString();
+    const seniorClaim = BigInt(seniorClaimAtomic);
+    source.lockedAtomic = (BigInt(source.lockedAtomic) + seniorClaim).toString();
     source.updatedAt = new Date().toISOString();
-    return amount.toString();
+    return seniorClaim.toString();
   }
 
   private releaseBackingSource(lien: ReceivableLien): void {
     if (lien.productType === "job-backed") return;
     const source = this.getBackingSource(lien.repaymentSource);
-    source.lockedAtomic = (BigInt(source.lockedAtomic) > BigInt(lien.principalAtomic)
-      ? BigInt(source.lockedAtomic) - BigInt(lien.principalAtomic)
+    source.lockedAtomic = (BigInt(source.lockedAtomic) > BigInt(lien.seniorClaimAtomic)
+      ? BigInt(source.lockedAtomic) - BigInt(lien.seniorClaimAtomic)
       : 0n).toString();
     source.updatedAt = new Date().toISOString();
   }
@@ -631,13 +649,35 @@ export class AgentCreditService {
   private settleDefaultedBackingSource(lien: ReceivableLien, shortfall: bigint): void {
     if (lien.productType === "job-backed") return;
     const source = this.getBackingSource(lien.repaymentSource);
-    source.lockedAtomic = (BigInt(source.lockedAtomic) > BigInt(lien.principalAtomic)
-      ? BigInt(source.lockedAtomic) - BigInt(lien.principalAtomic)
+    source.lockedAtomic = (BigInt(source.lockedAtomic) > BigInt(lien.seniorClaimAtomic)
+      ? BigInt(source.lockedAtomic) - BigInt(lien.seniorClaimAtomic)
       : 0n).toString();
     if (shortfall > 0n) {
       source.status = "paused";
     }
     source.updatedAt = new Date().toISOString();
+  }
+
+  private liquidateBackingValue(lien: ReceivableLien, remainingClaim: bigint): bigint {
+    if (remainingClaim <= 0n) return 0n;
+    if (lien.productType === "job-backed") {
+      const job = this.jobs.get(lien.repaymentSource);
+      if (!job) return 0n;
+      const pledged = BigInt(job.escrowAmountAtomic);
+      return pledged > remainingClaim ? remainingClaim : pledged;
+    }
+    const source = this.getBackingSource(lien.repaymentSource);
+    const liquidationValue = BigInt(source.liquidationValueAtomic);
+    const paid = liquidationValue > remainingClaim ? remainingClaim : liquidationValue;
+    source.liquidationValueAtomic = (liquidationValue - paid).toString();
+    source.updatedAt = new Date().toISOString();
+    return paid;
+  }
+
+  private activeClaimsForSource(repaymentSource: string): bigint {
+    return Array.from(this.liens.values())
+      .filter((lien) => lien.repaymentSource === repaymentSource && (lien.status === "active" || lien.status === "defaulted"))
+      .reduce((total, lien) => total + BigInt(lien.seniorClaimAtomic), 0n);
   }
 
   private recordErc8004Feedback(
@@ -674,6 +714,11 @@ function defaultVerifier(productType: Exclude<CreditProductType, "job-backed">):
   if (productType === "asset-backed") return "ftso";
   if (productType === "subscription-backed") return "fdc";
   return "x402";
+}
+
+function defaultLiquidationValue(productType: Exclude<CreditProductType, "job-backed">, valueAtomic: string): string {
+  if (productType === "asset-backed") return valueAtomic;
+  return "0";
 }
 
 function syntheticJob(source: CreditBackingSource): FundedJob {

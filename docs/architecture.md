@@ -13,10 +13,16 @@ The agent borrows against one repayment source:
 
 - `job-backed`: funded job escrow.
 - `asset-backed`: verified collateral value.
-- `subscription-backed`: verified recurring subscription revenue.
-- `earnings-backed`: verified historical agent earnings.
+- `subscription-backed`: verified recurring subscription revenue plus escrowed receipts, a sponsor bond, or a sweep-router reserve.
+- `earnings-backed`: verified historical agent earnings plus an earnings reserve, owner bond, or sweep-router balance.
 
-The agent requests a credit amount for a specific supplier and purpose, plus a maximum acceptable fee. Lender agents register liquidity, policy, and their ask rate. The service signs a borrow intent only if the repayment source is valid, the supplier is allowed, the advance is within policy, and the source still has enough capacity at the borrower fee cap. c402 matches the offer to the lowest-rate eligible lender agent, using reputation and liquidity as tie-breakers. For job-backed credit, the borrower or sponsor can post additional collateral. For non-job credit, the backing source records locked capacity. The lender pays the supplier directly and records the supplier payment identifier. c402 creates a senior lien against the repayment source. On repayment, principal and fee are routed before unrestricted agent proceeds. On missed deadline or default, locked collateral and reserve can be liquidated for the lender, with any shortfall recorded against the borrower reputation.
+The agent requests a credit amount for a specific supplier and purpose, plus a maximum acceptable fee. Lender agents register liquidity, policy, and their ask rate. The service signs a borrow intent only if the repayment source is valid, the supplier is allowed, the advance is within policy, and the source still has enough hard liquidation value at the borrower fee cap. c402 matches the offer to the lowest-rate eligible lender agent, using reputation and liquidity as tie-breakers. For job-backed credit, funded job escrow and posted collateral are recovery sources. For non-job credit, the backing source records both projected value and hard liquidation value. The lender pays the supplier directly and records the supplier payment identifier. c402 creates a senior lien against the repayment source. On repayment, principal and fee are routed before unrestricted agent proceeds. On missed deadline or default, locked collateral, liquidatable backing value, and reserve can be liquidated for the lender, with any shortfall recorded against the borrower reputation.
+
+The core safety invariant is that projected revenue cannot replace collateral:
+
+```text
+principal + maximum borrower fee <= hard liquidatable recovery value
+```
 
 This limits loss if an agent fails or if an agent wallet is compromised, because the borrower never receives unrestricted loan principal.
 

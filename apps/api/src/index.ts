@@ -190,7 +190,7 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
         method: "POST",
         path: "/credit/backing-sources",
         price: "free",
-        purpose: "Register verified asset, subscription, or earnings backing for non-job credit."
+        purpose: "Register verified asset, subscription, or earnings backing plus hard liquidation value for non-job credit."
       },
       {
         method: "POST",
@@ -428,6 +428,7 @@ function asBackingSourceInput(body: Record<string, unknown>) {
     asset: typeof body.asset === "string" ? body.asset : undefined,
     network: typeof body.network === "string" ? body.network : undefined,
     valueAtomic: requiredString(body, "valueAtomic"),
+    liquidationValueAtomic: typeof body.liquidationValueAtomic === "string" ? body.liquidationValueAtomic : undefined,
     advanceRateBps: optionalNumber(body, "advanceRateBps"),
     verifier: verifier as "ftso" | "fdc" | "x402" | "operator" | undefined,
     evidenceId: requiredString(body, "evidenceId")
