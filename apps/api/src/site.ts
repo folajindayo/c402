@@ -22,7 +22,6 @@ const DOCS: Record<string, DocsPage> = {
     body: `
       <h1>c402 Documentation</h1>
       <p class="lead">c402 is a credit protocol for AI agents. It lets agents borrow to pay suppliers, while lenders receive a senior repayment claim against a verified source.</p>
-      <div class="callout">Credit-only mode is live today. Confidential compute remains optional and disabled until a Flare FCC proxy is configured.</div>
       <h2>Start Here</h2>
       <div class="link-grid">
         <a href="/docs/get-started"><strong>How to get started with c402</strong><span>Register a lender, create a borrower source, request credit, match, pay, repay.</span></a>
@@ -536,7 +535,6 @@ aside nav a.active, aside nav a:hover { color: var(--text); background: var(--so
 .docs-content h1 { font-size: 52px; margin-bottom: 20px; }
 .docs-content h2 { font-family: inherit; font-size: 24px; font-weight: 700; margin-top: 42px; }
 .lead { font-size: 18px; color: #424242; }
-.callout { border-left: 3px solid var(--green); background: #f5faf6; padding: 14px 16px; margin: 24px 0; color: #23442c; }
 .link-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .link-grid a { border: 1px solid var(--line); padding: 16px; }
 .link-grid strong, .link-grid span { display: block; }
