@@ -3,12 +3,6 @@
 Base URL:
 
 ```text
-https://c402-uifolajin-8675s-projects.vercel.app
-```
-
-When `c402.site` DNS is configured, the same API should be available at:
-
-```text
 https://c402.site
 ```
 

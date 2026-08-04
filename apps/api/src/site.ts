@@ -208,7 +208,7 @@ Selected lender: B</code></pre>
     description: "HTTP endpoints exposed by c402.",
     body: `
       <h1>API Reference</h1>
-      <p class="lead">Base URL: <code>https://c402.site</code>. Until DNS is complete, use the Vercel production URL.</p>
+      <p class="lead">Base URL: <code>https://c402.site</code></p>
       <h2>Discovery</h2>
       <pre><code>GET /health
 GET /.well-known/c402.json
