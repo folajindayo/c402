@@ -5,9 +5,10 @@
   "deployer": "0xD17fbeA515ecB5aA548aC26d0897B5bc1fcec984",
   "credit": {
     "network": "eip155:84532",
-    "contract": "",
-    "status": "deployment_required",
-    "reason": "DEPLOYMENT_PRIVATE_KEY is empty in the local .env used by this workspace"
+    "contract": "0x65Aae7c6D3cA5B9dADB098024C8Bb9EE816448F0",
+    "status": "deployed",
+    "deployTx": "0x297c61891cdb5659fa6916202b5dcf93870f58b61ba69b2ad4787aec9a5f8c79",
+    "owner": "0xD17fbeA515ecB5aA548aC26d0897B5bc1fcec984"
   },
   "erc8004": {
     "identityRegistry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
