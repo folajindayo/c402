@@ -2,6 +2,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { C402Error, type CreditProductType, type Purpose } from "@c402/protocol";
 import { createFccAdapterFromEnv } from "@c402/fcc-adapter";
 import { AgentCreditService, ConfidentialPaymentService, createConfigFromEnv } from "@c402/server";
+import { keccak256, toBytes, type Hex } from "viem";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import {
   flareX402Asset,
   flareX402FacilitatorConfigured,
@@ -63,8 +65,19 @@ export default async function apiHandler(req: IncomingMessage, res: ServerRespon
     if (req.method === "GET" && url.pathname === "/lenders") {
       return sendJson(res, 200, { lenders: credit.state().lenders });
     }
+    if (req.method === "POST" && url.pathname === "/lenders/wallets") {
+      return sendJson(res, 201, createTestnetLenderWallet());
+    }
     if (req.method === "POST" && url.pathname === "/lenders/register") {
       return sendJson(res, 201, credit.registerLender(asLenderProfileInput(await readJson(req))));
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/lenders/") && url.pathname.endsWith("/actions")) {
+      const lender = decodeURIComponent(url.pathname.slice("/lenders/".length, -"/actions".length));
+      const queue = credit.lenderFundingActions(lender);
+      return sendJson(res, 200, {
+        lender: queue.lender,
+        actions: queue.actions.map(withFundingTransaction)
+      });
     }
     if (req.method === "POST" && url.pathname === "/credit/jobs") {
       return sendJson(res, 201, credit.createFundedJob(asFundedJobInput(await readJson(req))));
@@ -235,6 +248,18 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
       },
       {
         method: "POST",
+        path: "/lenders/wallets",
+        price: "free",
+        purpose: "Create a testnet lender agent wallet. The private key is returned once and is never stored by c402."
+      },
+      {
+        method: "GET",
+        path: "/lenders/{lender}/actions",
+        price: "free",
+        purpose: "List pending supplier-payment transactions for a funded lender agent wallet."
+      },
+      {
+        method: "POST",
         path: "/credit/match",
         price: "free",
         purpose: "Match an approved credit offer to the best eligible lender agent."
@@ -373,6 +398,12 @@ function openApi(baseUrl: string): Record<string, unknown> {
       "/lenders/register": {
         post: { summary: "Register lender agent profile", responses: { "201": { description: "Lender profile" } } }
       },
+      "/lenders/wallets": {
+        post: { summary: "Create a testnet lender agent wallet", responses: { "201": { description: "Wallet address and one-time private key" } } }
+      },
+      "/lenders/{lender}/actions": {
+        get: { summary: "List pending lender wallet funding actions", responses: { "200": { description: "Pending funding actions with transaction data" } } }
+      },
       "/credit/match": {
         post: { summary: "Match offer to lender agent", responses: { "200": { description: "Selected lender match" } } }
       },
@@ -401,6 +432,76 @@ function openApi(baseUrl: string): Record<string, unknown> {
 function env(name: string): string | undefined {
   const value = process.env[name]?.trim();
   return value ? value : undefined;
+}
+
+function createTestnetLenderWallet(): Record<string, unknown> {
+  const privateKey = generatePrivateKey();
+  const account = privateKeyToAccount(privateKey);
+  return {
+    address: account.address,
+    privateKey,
+    custody: "client-controlled",
+    network: "eip155:84532",
+    fundWith: "Base Sepolia ETH for the current native-token credit contract",
+    warning: "Testnet helper only. c402 does not store this key. Do not use this generated key for mainnet funds.",
+    nextSteps: [
+      "Fund the address with Base Sepolia ETH.",
+      "Register the address with POST /lenders/register.",
+      "Poll GET /lenders/{address}/actions.",
+      "Sign and submit each transaction from the funded lender agent wallet.",
+      "Report the supplier payment transaction hash to POST /credit/offers/{offerId}/supplier-payment."
+    ]
+  };
+}
+
+function withFundingTransaction(action: ReturnType<AgentCreditService["lenderFundingActions"]>["actions"][number]): Record<string, unknown> {
+  const contract = baseSepoliaCreditContract();
+  const jobIdBytes32 = idToBytes32(action.repaymentSource);
+  const advanceIdBytes32 = idToBytes32(action.offerId);
+  return {
+    ...action,
+    transaction: contract ? {
+      chainId: 84532,
+      network: "eip155:84532",
+      to: contract,
+      value: action.amountAtomic,
+      valueUnits: "native-token-wei",
+      functionName: "paySupplier",
+      args: [jobIdBytes32, advanceIdBytes32, action.supplierDomain, action.purpose, action.durationSeconds],
+      abi: [{
+        type: "function",
+        name: "paySupplier",
+        stateMutability: "payable",
+        inputs: [
+          { name: "jobId", type: "bytes32" },
+          { name: "advanceId", type: "bytes32" },
+          { name: "supplierDomain", type: "string" },
+          { name: "purpose", type: "string" },
+          { name: "durationSeconds", type: "uint256" }
+        ],
+        outputs: []
+      }],
+      idDerivation: {
+        jobIdBytes32: `keccak256(utf8:${action.repaymentSource})`,
+        advanceIdBytes32: `keccak256(utf8:${action.offerId})`
+      },
+      afterSubmit: {
+        method: "POST",
+        path: `/credit/offers/${encodeURIComponent(action.offerId)}/supplier-payment`,
+        body: {
+          lender: action.lender,
+          supplierPaymentId: "<transaction-hash>"
+        }
+      }
+    } : undefined,
+    transactionWarning: contract
+      ? "The current Base Sepolia C402CreditIntent contract debits native testnet token from the lender agent wallet."
+      : "C402_BASE_SEPOLIA_CREDIT_CONTRACT is not configured, so no transaction target is available."
+  };
+}
+
+function idToBytes32(value: string): Hex {
+  return keccak256(toBytes(value));
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {

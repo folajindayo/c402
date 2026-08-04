@@ -56,6 +56,28 @@ export interface CreditFlowState {
   lenderShortfalls: Array<{ lender: string; amountAtomic: string }>;
 }
 
+export interface LenderFundingAction {
+  actionId: string;
+  type: "pay-supplier";
+  status: "pending";
+  lender: string;
+  lenderId: string;
+  matchId: string;
+  offerId: string;
+  requestId: string;
+  repaymentSource: string;
+  productType: CreditProductType;
+  borrower: string;
+  supplier: string;
+  supplierDomain: string;
+  purpose: Purpose;
+  amountAtomic: string;
+  feeAtomic: string;
+  durationSeconds: number;
+  expiresAt: string;
+  createdAt: string;
+}
+
 export interface AgentCreditServiceOptions {
   endpoint?: string;
   network?: string;
@@ -309,7 +331,7 @@ export class AgentCreditService {
     verifyCreditOffer(offer, this.signer.publicKey);
     const request = this.getRequest(offer.requestId);
     const match = Array.from(this.matches.values()).find((item) => item.offerId === offer.offerId);
-    if (match && match.lenderAgent !== input.lender) {
+    if (match && !sameAddress(match.lenderAgent, input.lender)) {
       throw new C402Error("lender_mismatch", "supplier payment lender does not match the selected lender agent", 409);
     }
     const feeAtomic = match?.feeAtomic ?? offer.feeAtomic;
@@ -354,6 +376,47 @@ export class AgentCreditService {
       }
     }
     return advance;
+  }
+
+  lenderFundingActions(lenderAgent: string): { lender: LenderProfile; actions: LenderFundingAction[] } {
+    const lender = Array.from(this.lenders.values()).find((item) => sameAddress(item.agent, lenderAgent));
+    if (!lender) {
+      throw new C402Error("lender_not_found", `lender agent ${lenderAgent} not found`, 404);
+    }
+
+    const now = Date.now();
+    const actions = Array.from(this.matches.values())
+      .filter((match) => sameAddress(match.lenderAgent, lender.agent))
+      .filter((match) => !Array.from(this.advances.values()).some((advance) => advance.offerId === match.offerId))
+      .map((match) => {
+        const offer = this.getOffer(match.offerId);
+        const request = this.getRequest(match.requestId);
+        return { match, offer, request };
+      })
+      .filter(({ offer }) => Date.parse(offer.expiresAt) > now)
+      .map(({ match, offer, request }) => ({
+        actionId: `fund-${match.matchId}`,
+        type: "pay-supplier" as const,
+        status: "pending" as const,
+        lender: lender.agent,
+        lenderId: lender.lenderId,
+        matchId: match.matchId,
+        offerId: offer.offerId,
+        requestId: request.requestId,
+        repaymentSource: request.repaymentSource,
+        productType: request.productType,
+        borrower: request.agent,
+        supplier: request.supplier,
+        supplierDomain: request.supplierDomain,
+        purpose: request.purpose,
+        amountAtomic: offer.approvedAmountAtomic,
+        feeAtomic: match.feeAtomic,
+        durationSeconds: request.durationSeconds,
+        expiresAt: offer.expiresAt,
+        createdAt: match.createdAt
+      }));
+
+    return { lender, actions };
   }
 
   completeJob(jobId: string, advanceId: string): RepaymentReceipt {
@@ -740,4 +803,8 @@ function syntheticAgentRef(source: CreditBackingSource): Erc8004AgentRef {
     agentRegistry: `${source.network}:c402-credit-passport`,
     agentId: source.agent.replace(/^0x/i, "") || source.sourceId
   };
+}
+
+function sameAddress(left: string, right: string): boolean {
+  return left.toLowerCase() === right.toLowerCase();
 }

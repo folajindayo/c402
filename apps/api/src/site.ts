@@ -43,7 +43,10 @@ const DOCS: Record<string, DocsPage> = {
       <h2>1. Discover the service</h2>
       <pre><code>curl https://c402.site/.well-known/c402.json</code></pre>
       <p>Agents should read the catalog before calling credit endpoints. The catalog lists supported products, networks, and endpoints.</p>
-      <h2>2. Register a lender agent</h2>
+      <h2>2. Create and fund a lender agent wallet</h2>
+      <pre><code>curl -X POST https://c402.site/lenders/wallets</code></pre>
+      <p>The response includes a testnet lender wallet address and a one-time private key. Fund the address with Base Sepolia ETH for the current native-token testnet credit contract.</p>
+      <h2>3. Register the lender agent wallet</h2>
       <pre><code>curl -X POST https://c402.site/lenders/register \\
   -H 'content-type: application/json' \\
   -d '{
@@ -58,7 +61,7 @@ const DOCS: Record<string, DocsPage> = {
     "acceptedRiskBands":["A","B"],
     "reputationScore":75
   }'</code></pre>
-      <h2>3. Create or register a repayment source</h2>
+      <h2>4. Create or register a repayment source</h2>
       <p>For a funded job, create a job receivable. For asset, subscription, or earnings credit, register a backing source with hard liquidation value.</p>
       <pre><code>curl -X POST https://c402.site/credit/backing-sources \\
   -H 'content-type: application/json' \\
@@ -71,7 +74,7 @@ const DOCS: Record<string, DocsPage> = {
     "advanceRateBps":6500,
     "evidenceId":"ftso-proof-1"
   }'</code></pre>
-      <h2>4. Request credit</h2>
+      <h2>5. Request credit</h2>
       <pre><code>curl -X POST https://c402.site/credit/request \\
   -H 'content-type: application/json' \\
   -d '{
@@ -84,19 +87,21 @@ const DOCS: Record<string, DocsPage> = {
     "repaymentSource":"asset-source-1",
     "maximumFeeAtomic":"100000"
   }'</code></pre>
-      <h2>5. Match a lender</h2>
+      <h2>6. Match a lender</h2>
       <pre><code>curl -X POST https://c402.site/credit/match \\
   -H 'content-type: application/json' \\
   -d '{"offerId":"offer-id"}'</code></pre>
       <p>c402 selects the lowest-rate eligible lender. Reputation and liquidity are tie-breakers.</p>
-      <h2>6. Record supplier payment</h2>
+      <h2>7. Lender wallet signs supplier payment</h2>
+      <pre><code>curl https://c402.site/lenders/0xLenderAgent/actions</code></pre>
+      <p>The lender agent runner signs the returned transaction from the funded wallet. The borrower never receives the principal.</p>
       <pre><code>curl -X POST https://c402.site/credit/offers/offer-id/supplier-payment \\
   -H 'content-type: application/json' \\
   -d '{
     "lender":"0xLenderAgent",
-    "supplierPaymentId":"x402-or-chain-payment-id"
+    "supplierPaymentId":"0xSupplierPaymentTxHash"
   }'</code></pre>
-      <h2>7. Repay or liquidate</h2>
+      <h2>8. Repay or liquidate</h2>
       <p>When revenue arrives, repay the advance. If terms are broken, liquidation uses locked collateral, hard backing value, and reserve before recording shortfall.</p>
     `
   },
@@ -152,6 +157,15 @@ Selected lender: B</code></pre>
         <li>Accepted risk bands</li>
         <li>Reputation score</li>
       </ul>
+      <h2>Funded lender wallet flow</h2>
+      <ol>
+        <li>Create a testnet lender wallet with <code>POST /lenders/wallets</code>, or bring your own agent wallet.</li>
+        <li>Fund that wallet with Base Sepolia ETH for the current testnet contract.</li>
+        <li>Register the wallet address with <code>POST /lenders/register</code>.</li>
+        <li>Poll <code>GET /lenders/{address}/actions</code>.</li>
+        <li>Sign the returned <code>paySupplier</code> transaction from the funded wallet.</li>
+        <li>Report the transaction hash to <code>POST /credit/offers/{offerId}/supplier-payment</code>.</li>
+      </ol>
       <h2>Recovery order</h2>
       <ol>
         <li>Repayment source revenue</li>
@@ -233,7 +247,9 @@ POST /credit/advances/{advanceId}/repay
 POST /credit/advances/{advanceId}/liquidate</code></pre>
       <h2>Lenders</h2>
       <pre><code>GET  /lenders
-POST /lenders/register</code></pre>
+POST /lenders/wallets
+POST /lenders/register
+GET  /lenders/{address}/actions</code></pre>
       <h2>Compute</h2>
       <pre><code>POST /credit-score</code></pre>
       <p><code>/credit-score</code> is disabled in the current production deployment until FCC is configured.</p>
