@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
-const apiBase = process.env.C402_BASE_URL ?? "";
+const apiBase = process.env.C402_BASE_URL?.trim() ?? "";
 const port = Number(process.env.DASHBOARD_PORT ?? 4022);
 const host = process.env.HOST ?? "127.0.0.1";
 

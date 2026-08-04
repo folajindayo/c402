@@ -3,12 +3,12 @@ import { C402Error, type CreditProductType, type Purpose } from "@c402/protocol"
 import { createFccAdapterFromEnv } from "@c402/fcc-adapter";
 import { AgentCreditService, ConfidentialPaymentService, createConfigFromEnv } from "@c402/server";
 
-const computeEnabled = process.env.C402_ENABLE_COMPUTE === "true";
+const computeEnabled = env("C402_ENABLE_COMPUTE") === "true";
 const service = computeEnabled ? createConfidentialPaymentService() : undefined;
 const credit = new AgentCreditService({
-  endpoint: process.env.C402_CREDIT_ENDPOINT ?? process.env.C402_PUBLIC_URL,
-  network: process.env.C402_NETWORK,
-  asset: process.env.C402_ASSET
+  endpoint: env("C402_CREDIT_ENDPOINT") ?? env("C402_PUBLIC_URL"),
+  network: env("C402_NETWORK"),
+  asset: env("C402_ASSET")
 });
 if (service) await service.warmup();
 
@@ -162,7 +162,7 @@ function sendComputeDisabled(res: ServerResponse): void {
 }
 
 function publicBaseUrl(req: IncomingMessage): string {
-  return process.env.C402_PUBLIC_URL ?? `${req.headers["x-forwarded-proto"] ?? "http"}://${req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost"}`;
+  return env("C402_PUBLIC_URL") ?? `${req.headers["x-forwarded-proto"] ?? "http"}://${req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost"}`;
 }
 
 function serviceCatalog(baseUrl: string): Record<string, unknown> {
@@ -176,12 +176,12 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
       confidentialCompute: computeEnabled ? "available" : "disabled_until_fcc_proxy_registered"
     },
     testnet: {
-      creditContract: process.env.C402_CREDIT_CONTRACT ?? "0x170864d2086D3ee15B43dD1092347D6FA73E0702",
-      creditNetwork: process.env.C402_CREDIT_NETWORK ?? "eip155:114",
-      x402Network: process.env.C402_NETWORK ?? "eip155:84532",
-      x402Asset: process.env.C402_ASSET ?? "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-      payTo: process.env.C402_PAY_TO ?? "0x21b805BBC4bfFA7769868BF7f488D77b71756d3E",
-      erc8004AgentId: process.env.ERC8004_AGENT_ID ?? "8681"
+      creditContract: env("C402_CREDIT_CONTRACT") ?? "0x170864d2086D3ee15B43dD1092347D6FA73E0702",
+      creditNetwork: env("C402_CREDIT_NETWORK") ?? "eip155:114",
+      x402Network: env("C402_NETWORK") ?? "eip155:84532",
+      x402Asset: env("C402_ASSET") ?? "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      payTo: env("C402_PAY_TO") ?? "0x21b805BBC4bfFA7769868BF7f488D77b71756d3E",
+      erc8004AgentId: env("ERC8004_AGENT_ID") ?? "8681"
     },
     endpoints: [
       {
@@ -247,7 +247,7 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
       {
         method: "POST",
         path: "/credit-score",
-        price: process.env.C402_PRICE_USD ?? "0.10",
+        price: env("C402_PRICE_USD") ?? "0.10",
         payment: "x402",
         enabled: computeEnabled,
         purpose: "Optional confidential credit scoring over c402 Compute."
@@ -314,6 +314,11 @@ function openApi(baseUrl: string): Record<string, unknown> {
       }
     }
   };
+}
+
+function env(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value ? value : undefined;
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
