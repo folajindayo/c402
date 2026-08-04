@@ -304,7 +304,7 @@ export function renderLanding(baseUrl: string): string {
           </div>
         </nav>
         <section class="hero">
-          <div>
+          <div class="hero-inner">
             <p class="eyebrow">Credit for agentic commerce</p>
             <h1>Purpose-bound credit for AI agents.</h1>
             <p class="hero-copy">c402 lets agents borrow to pay APIs and suppliers, while lenders receive a senior claim against verified repayment sources.</p>
@@ -312,16 +312,6 @@ export function renderLanding(baseUrl: string): string {
               <a class="button" href="/docs/get-started">Start with c402</a>
               <a class="button secondary" href="/.well-known/c402.json">View service catalog</a>
             </div>
-          </div>
-          <div class="mark" aria-hidden="true">
-            <pre>
-  ccccc    444  0000    2222
- cc       4 44 00  00      22
- cc      4  44 00  00    222
- cc      44444 00  00   22
- cc         44 00  00  22
-  ccccc     44  0000  222222
-            </pre>
           </div>
         </section>
         <section class="metrics">
@@ -508,21 +498,15 @@ code { font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px; }
 .topbar { display: flex; justify-content: space-between; align-items: center; min-height: 48px; border-bottom: 1px solid var(--line); }
 .brand { font-size: 36px; font-weight: 700; letter-spacing: 0; }
 .topbar div { display: flex; gap: 24px; font-size: 13px; text-transform: uppercase; }
-.hero { display: grid; grid-template-columns: 1fr 360px; gap: 80px; align-items: center; padding: 70px 0 48px; }
+.hero { display: flex; justify-content: center; padding: 76px 0 56px; text-align: center; }
+.hero-inner { width: min(100%, 820px); }
 .eyebrow { margin: 0 0 14px; color: #555; text-transform: uppercase; letter-spacing: .08em; font-size: 12px; }
 h1 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 76px; line-height: .98; font-weight: 400; letter-spacing: 0; }
 h2 { margin: 0 0 18px; font-family: Georgia, "Times New Roman", serif; font-size: 42px; line-height: 1.05; font-weight: 400; letter-spacing: 0; }
-.hero-copy { max-width: 560px; font-size: 18px; }
-.actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 28px; }
+.hero-copy { max-width: 640px; margin: 22px auto 0; font-size: 18px; }
+.actions { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 28px; }
 .button { display: inline-flex; align-items: center; min-height: 42px; padding: 0 18px; background: var(--black); color: #fff; border: 1px solid var(--black); font-weight: 700; font-size: 13px; }
 .button.secondary { background: #fff; color: var(--black); }
-.mark { position: relative; align-self: center; overflow: hidden; padding: 18px 0; color: var(--black); }
-.mark::before { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 0 42%, rgba(22, 131, 58, .14) 48%, transparent 58%); transform: translateY(-110%); animation: ascii-scan 3.8s linear infinite; pointer-events: none; }
-.mark::after { content: "_"; position: absolute; right: 6px; bottom: 8px; font: 700 20px "SFMono-Regular", Consolas, monospace; color: var(--green); animation: ascii-caret 1s steps(2, end) infinite; }
-.mark pre { margin: 0; padding: 0; border: 0; background: transparent; overflow: visible; font: 700 13px/1.02 "SFMono-Regular", Consolas, monospace; letter-spacing: 0; transform: skewY(-4deg); animation: ascii-settle 4.8s ease-in-out infinite; }
-@keyframes ascii-scan { 0% { transform: translateY(-110%); } 100% { transform: translateY(110%); } }
-@keyframes ascii-caret { 0%, 45% { opacity: 1; } 46%, 100% { opacity: 0; } }
-@keyframes ascii-settle { 0%, 100% { transform: skewY(-4deg) translateY(0); } 50% { transform: skewY(-4deg) translateY(-4px); } }
 .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px; padding: 22px 0 54px; }
 .metrics strong { display: block; font-family: Georgia, "Times New Roman", serif; font-size: 34px; font-weight: 400; }
 .metrics span { color: var(--muted); font-size: 13px; }
@@ -564,17 +548,12 @@ aside nav a.active, aside nav a:hover { color: var(--text); background: var(--so
 @media (max-width: 900px) {
   .landing { padding: 20px; }
   .topbar { align-items: flex-start; gap: 18px; flex-direction: column; padding-bottom: 16px; }
-  .hero, .split, .compare, .metrics, .principle-grid, .docs-layout, .link-grid { grid-template-columns: 1fr; }
-  .hero { gap: 28px; padding-top: 44px; }
+  .split, .compare, .metrics, .principle-grid, .docs-layout, .link-grid { grid-template-columns: 1fr; }
+  .hero { padding: 44px 0 38px; }
   h1 { font-size: 44px; }
   h2 { font-size: 30px; }
-  .mark { max-width: 100%; padding-top: 4px; }
-  .mark pre { font-size: 7.5px; line-height: 1; }
   .docs-layout { padding: 20px; }
   aside { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 20px; }
   .toc { display: none; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .mark::before, .mark::after, .mark pre { animation: none; }
 }
 `;
