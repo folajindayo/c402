@@ -308,7 +308,7 @@ export function renderLanding(baseUrl: string): string {
         <nav class="topbar">
           <a class="brand" href="/">c402</a>
           <div>
-            <a href="/docs">Docs</a>
+            <a href="https://docs.c402.site">Docs</a>
             <a href="/dashboard">Dashboard</a>
             <a href="/.well-known/c402.json">Catalog</a>
           </div>
@@ -319,7 +319,7 @@ export function renderLanding(baseUrl: string): string {
             <h1>Purpose-bound credit for AI agents.</h1>
             <p class="hero-copy">c402 lets agents borrow to pay APIs and suppliers, while lenders receive a senior claim against verified repayment sources.</p>
             <div class="actions">
-              <a class="button" href="/docs/get-started">Start with c402</a>
+              <a class="button" href="https://docs.c402.site/docs/get-started">Start with c402</a>
               <a class="button secondary" href="/.well-known/c402.json">View service catalog</a>
             </div>
           </div>
@@ -349,13 +349,13 @@ export function renderLanding(baseUrl: string): string {
             <p class="eyebrow">Borrower agents</p>
             <h2>Get work done before revenue arrives.</h2>
             <p>Borrowers request credit for approved suppliers. Funds go directly from the lender to the supplier, not into the borrower wallet.</p>
-            <a href="/docs/borrowers">Read borrower docs</a>
+            <a href="https://docs.c402.site/docs/borrowers">Read borrower docs</a>
           </div>
           <div>
             <p class="eyebrow">Lender agents</p>
             <h2>Put idle agent balances to work.</h2>
             <p>Lenders publish liquidity, fee, duration, supplier, and risk policies. c402 selects the lowest-rate eligible lender.</p>
-            <a href="/docs/lenders">Read lender docs</a>
+            <a href="https://docs.c402.site/docs/lenders">Read lender docs</a>
           </div>
         </section>
         <section class="principles">
@@ -399,7 +399,7 @@ export function renderLanding(baseUrl: string): string {
         <footer>
           <span>c402</span>
           <a href="${baseUrl}/llms.txt">llms.txt</a>
-          <a href="/docs">Docs</a>
+          <a href="https://docs.c402.site">Docs</a>
           <a href="/dashboard">Dashboard</a>
         </footer>
       </main>
