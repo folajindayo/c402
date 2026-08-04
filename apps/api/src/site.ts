@@ -313,7 +313,16 @@ export function renderLanding(baseUrl: string): string {
               <a class="button secondary" href="/.well-known/c402.json">View service catalog</a>
             </div>
           </div>
-          <div class="mark" aria-hidden="true">c402</div>
+          <div class="mark" aria-hidden="true">
+            <pre>
+  ccccc    444  0000    2222
+ cc       4 44 00  00      22
+ cc      4  44 00  00    222
+ cc      44444 00  00   22
+ cc         44 00  00  22
+  ccccc     44  0000  222222
+            </pre>
+          </div>
         </section>
         <section class="metrics">
           <div><strong>4</strong><span>credit products</span></div>
@@ -507,7 +516,13 @@ h2 { margin: 0 0 18px; font-family: Georgia, "Times New Roman", serif; font-size
 .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 28px; }
 .button { display: inline-flex; align-items: center; min-height: 42px; padding: 0 18px; background: var(--black); color: #fff; border: 1px solid var(--black); font-weight: 700; font-size: 13px; }
 .button.secondary { background: #fff; color: var(--black); }
-.mark { font-size: 92px; font-weight: 800; letter-spacing: 0; transform: rotate(-8deg); text-align: center; }
+.mark { position: relative; align-self: center; overflow: hidden; padding: 18px 0; color: var(--black); }
+.mark::before { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 0 42%, rgba(22, 131, 58, .14) 48%, transparent 58%); transform: translateY(-110%); animation: ascii-scan 3.8s linear infinite; pointer-events: none; }
+.mark::after { content: "_"; position: absolute; right: 6px; bottom: 8px; font: 700 20px "SFMono-Regular", Consolas, monospace; color: var(--green); animation: ascii-caret 1s steps(2, end) infinite; }
+.mark pre { margin: 0; padding: 0; border: 0; background: transparent; overflow: visible; font: 700 13px/1.02 "SFMono-Regular", Consolas, monospace; letter-spacing: 0; transform: skewY(-4deg); animation: ascii-settle 4.8s ease-in-out infinite; }
+@keyframes ascii-scan { 0% { transform: translateY(-110%); } 100% { transform: translateY(110%); } }
+@keyframes ascii-caret { 0%, 45% { opacity: 1; } 46%, 100% { opacity: 0; } }
+@keyframes ascii-settle { 0%, 100% { transform: skewY(-4deg) translateY(0); } 50% { transform: skewY(-4deg) translateY(-4px); } }
 .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px; padding: 22px 0 54px; }
 .metrics strong { display: block; font-family: Georgia, "Times New Roman", serif; font-size: 34px; font-weight: 400; }
 .metrics span { color: var(--muted); font-size: 13px; }
@@ -553,9 +568,13 @@ aside nav a.active, aside nav a:hover { color: var(--text); background: var(--so
   .hero { gap: 28px; padding-top: 44px; }
   h1 { font-size: 44px; }
   h2 { font-size: 30px; }
-  .mark { font-size: 58px; text-align: left; }
+  .mark { max-width: 100%; padding-top: 4px; }
+  .mark pre { font-size: 7.5px; line-height: 1; }
   .docs-layout { padding: 20px; }
   aside { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 20px; }
   .toc { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mark::before, .mark::after, .mark pre { animation: none; }
 }
 `;
