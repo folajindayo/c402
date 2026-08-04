@@ -30,7 +30,13 @@ C402_NETWORK=eip155:84532
 C402_ASSET=0x036CbD53842c5426634e7929541eC2318f3dCF7e
 C402_PAY_TO=0xYourReceiverWallet
 X402_FACILITATOR_URL=https://x402.org/facilitator
+X402_FLARE_NETWORK=eip155:114
+X402_FLARE_RPC_URL=https://coston2-api.flare.network/ext/C/rpc
+X402_FLARE_ASSET=0x21709E63fC7F264F329e0826Ea82197694B82775
+X402_FLARE_FACILITATOR_URL=https://api.your-domain.example/x402/flare-facilitator
 ```
+
+Set `X402_FLARE_FACILITATOR_PRIVATE_KEY` only as a private deployment secret when Flare x402 settlement should be active. Without it, the public catalog reports `facilitator_key_required` and the Flare facilitator endpoint returns `503`.
 
 ## Optional FCC Mode
 
@@ -54,6 +60,7 @@ Private keys must be provided only through private environment files or the depl
 - `DEPLOYMENT_PRIVATE_KEY`
 - `PROXY_PRIVATE_KEY`
 - `X402_PAYER_PRIVATE_KEY`
+- `X402_FLARE_FACILITATOR_PRIVATE_KEY`
 - `FUNDED_TEST_PRIVATE_KEY`
 - `EXTENSION_OWNER_KEY`
 

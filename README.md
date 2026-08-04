@@ -71,8 +71,15 @@ C402_ASSET=0x036CbD53842c5426634e7929541eC2318f3dCF7e
 C402_PAY_TO=0x...
 X402_FACILITATOR_URL=https://x402.org/facilitator
 
+X402_FLARE_NETWORK=eip155:114
+X402_FLARE_RPC_URL=https://coston2-api.flare.network/ext/C/rpc
+X402_FLARE_ASSET=0x21709E63fC7F264F329e0826Ea82197694B82775
+X402_FLARE_FACILITATOR_URL=https://your-api.example/x402/flare-facilitator
+
 C402_ENABLE_COMPUTE=false
 ```
+
+Set `X402_FLARE_FACILITATOR_PRIVATE_KEY` only in your deployment secret manager when you want Flare x402 verification and settlement active.
 
 For FCC:
 

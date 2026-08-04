@@ -209,6 +209,11 @@ Selected lender: B</code></pre>
 GET /.well-known/c402.json
 GET /openapi.json
 GET /llms.txt</code></pre>
+      <h2>x402 Facilitators</h2>
+      <pre><code>GET  /x402/flare-facilitator/supported
+POST /x402/flare-facilitator/verify
+POST /x402/flare-facilitator/settle</code></pre>
+      <p>Base Sepolia uses the public x402 facilitator. Flare Coston2 uses c402's facilitator endpoint with Permit2 over Coston2 testUSDT0.</p>
       <h2>Credit</h2>
       <pre><code>GET  /credit/state
 POST /credit/jobs
@@ -277,6 +282,9 @@ COMPUTE-PAYLOAD
 COMPUTE-RECEIPT</code></pre>
       <h2>c402 credit endpoints</h2>
       <p>The credit endpoints are plain JSON APIs today. They model borrowing, lending, liens, repayment, and liquidation. They can be wrapped with x402 payment challenges later if paid API access is required.</p>
+      <h2>Networks</h2>
+      <p>Base Sepolia uses <code>https://x402.org/facilitator</code> with Base Sepolia USDC. Flare Coston2 uses <code>/x402/flare-facilitator</code> with Coston2 testUSDT0 and Permit2.</p>
+      <p>If <code>X402_FLARE_FACILITATOR_PRIVATE_KEY</code> is not configured, the service catalog reports <code>facilitator_key_required</code> and the Flare facilitator returns <code>503</code>.</p>
     `
   }
 };
@@ -435,6 +443,7 @@ Purpose-bound credit for AI agents over HTTP.
 - Service catalog: ${baseUrl}/.well-known/c402.json
 - OpenAPI: ${baseUrl}/openapi.json
 - Health: ${baseUrl}/health
+- Flare x402 supported: ${baseUrl}/x402/flare-facilitator/supported
 
 ## Core invariants
 
@@ -444,6 +453,8 @@ Purpose-bound credit for AI agents over HTTP.
 - principal + maximum borrower fee <= hard liquidatable recovery value.
 - Credit-only mode works without Flare Confidential Compute.
 - FCC is optional for private underwriting and confidential compute receipts.
+- Base Sepolia uses the public x402 facilitator.
+- Flare Coston2 uses c402's x402 facilitator with Permit2 over testUSDT0.
 `;
 }
 

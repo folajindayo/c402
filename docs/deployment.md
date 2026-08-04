@@ -15,9 +15,15 @@ C402_ASSET=0x036CbD53842c5426634e7929541eC2318f3dCF7e
 C402_PAY_TO=0x...
 X402_FACILITATOR_URL=https://x402.org/facilitator
 C402_ENABLE_COMPUTE=false
+X402_FLARE_NETWORK=eip155:114
+X402_FLARE_RPC_URL=https://coston2-api.flare.network/ext/C/rpc
+X402_FLARE_ASSET=0x21709E63fC7F264F329e0826Ea82197694B82775
+X402_FLARE_FACILITATOR_URL=https://your-api.example/x402/flare-facilitator
 ```
 
-Base Sepolia is the primary public testnet for c402 credit and x402 payments. Flare Coston2 remains the optional confidential-compute network for FCC-backed underwriting and receipts.
+Base Sepolia is the primary public testnet for c402 credit and default x402 payments. Flare Coston2 is available through c402's own x402 facilitator because the default public x402 facilitator does not advertise Coston2.
+
+To enable Flare x402 settlement, add `X402_FLARE_FACILITATOR_PRIVATE_KEY` only in your host's secret manager. The key must control a Coston2-funded facilitator wallet.
 
 ## Optional FCC Environment
 
@@ -59,4 +65,7 @@ docker compose -f deploy/compose/compose.prod.yaml --env-file .env.production up
 - `POST /credit/jobs/{jobId}/complete`
 - `POST /credit/jobs/{jobId}/fail`
 - `POST /credit/advances/{advanceId}/liquidate`
+- `GET /x402/flare-facilitator/supported`
+- `POST /x402/flare-facilitator/verify`
+- `POST /x402/flare-facilitator/settle`
 - `POST /credit-score` when FCC is enabled

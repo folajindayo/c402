@@ -137,5 +137,8 @@ function assetExtra(network: string, asset: string): Record<string, string> {
   if (network === "eip155:84532" && asset.toLowerCase() === "0x036cbd53842c5426634e7929541ec2318f3dcf7e") {
     return { name: "USDC", version: "2" };
   }
+  if (network === "eip155:114" && asset.toLowerCase() === "0x21709e63fc7f264f329e0826ea82197694b82775") {
+    return { assetTransferMethod: "permit2" };
+  }
   return {};
 }

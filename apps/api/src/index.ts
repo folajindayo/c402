@@ -2,6 +2,13 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { C402Error, type CreditProductType, type Purpose } from "@c402/protocol";
 import { createFccAdapterFromEnv } from "@c402/fcc-adapter";
 import { AgentCreditService, ConfidentialPaymentService, createConfigFromEnv } from "@c402/server";
+import {
+  flareX402Asset,
+  flareX402FacilitatorConfigured,
+  flareX402FacilitatorUrl,
+  flareX402Network,
+  handleFlareFacilitator
+} from "./flare-facilitator.js";
 import { renderDocs, renderLanding, renderLlmsTxt } from "./site.js";
 
 const computeEnabled = env("C402_ENABLE_COMPUTE") === "true";
@@ -23,6 +30,8 @@ export default async function apiHandler(req: IncomingMessage, res: ServerRespon
     }
 
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    if (await handleFlareFacilitator(req, res, url.pathname)) return;
+
     if (req.method === "GET" && url.pathname === "/health") {
       return sendJson(res, 200, { ok: true, service: "c402-api" });
     }
@@ -198,7 +207,7 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
       payTo: env("C402_PAY_TO") ?? "0x21b805BBC4bfFA7769868BF7f488D77b71756d3E",
       erc8004AgentId: env("ERC8004_AGENT_ID") ?? "8681"
     },
-    supportedNetworks: supportedNetworks(),
+    supportedNetworks: supportedNetworks(baseUrl),
     endpoints: [
       {
         method: "POST",
@@ -272,7 +281,7 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
   };
 }
 
-function supportedNetworks(): Array<Record<string, unknown>> {
+function supportedNetworks(baseUrl: string): Array<Record<string, unknown>> {
   return [
     {
       chainId: 84532,
@@ -304,6 +313,16 @@ function supportedNetworks(): Array<Record<string, unknown>> {
       rpcUrl: "https://coston2-api.flare.network/ext/C/rpc",
       creditContract: env("C402_COSTON2_CREDIT_CONTRACT") ?? "0x170864d2086D3ee15B43dD1092347D6FA73E0702",
       creditContractStatus: "legacy-testnet",
+      x402: {
+        status: flareX402FacilitatorConfigured(process.env) ? "active" : "facilitator_key_required",
+        network: flareX402Network(process.env),
+        asset: flareX402Asset(process.env),
+        assetSymbol: "testUSDT0",
+        assetDecimals: 6,
+        assetTransferMethod: "permit2",
+        facilitatorUrl: flareX402FacilitatorUrl(process.env, baseUrl),
+        payTo: env("C402_PAY_TO") ?? "0x21b805BBC4bfFA7769868BF7f488D77b71756d3E"
+      },
       confidentialCompute: {
         enabled: computeEnabled,
         proxyUrlConfigured: Boolean(env("C402_FCC_PROXY_URL")),
