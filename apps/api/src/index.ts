@@ -12,12 +12,13 @@ const credit = new AgentCreditService({
 });
 if (service) await service.warmup();
 
-const server = createServer(async (req, res) => {
+export default async function apiHandler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
     setCorsHeaders(res);
     if (req.method === "OPTIONS") {
       res.statusCode = 204;
-      return res.end();
+      res.end();
+      return;
     }
 
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
@@ -136,14 +137,17 @@ const server = createServer(async (req, res) => {
       message: error instanceof Error ? error.message : String(error)
     });
   }
-});
+}
 
 const port = Number(process.env.PORT ?? 4021);
 const host = process.env.HOST ?? "127.0.0.1";
-server.listen(port, host, () => {
-  console.log(`c402 API listening at http://127.0.0.1:${port}`);
-  console.log(`confidential compute ${computeEnabled ? "enabled" : "disabled"}; credit endpoints are available`);
-});
+if (process.env.VERCEL !== "1") {
+  const server = createServer(apiHandler);
+  server.listen(port, host, () => {
+    console.log(`c402 API listening at http://127.0.0.1:${port}`);
+    console.log(`confidential compute ${computeEnabled ? "enabled" : "disabled"}; credit endpoints are available`);
+  });
+}
 
 function createConfidentialPaymentService(): ConfidentialPaymentService {
   const fcc = createFccAdapterFromEnv(process.env);

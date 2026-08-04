@@ -1,17 +1,20 @@
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
-const apiBase = process.env.C402_BASE_URL ?? "http://127.0.0.1:4021";
+const apiBase = process.env.C402_BASE_URL ?? "";
 const port = Number(process.env.DASHBOARD_PORT ?? 4022);
 const host = process.env.HOST ?? "127.0.0.1";
 
-const server = createServer((_req, res) => {
+export default function dashboardHandler(_req: IncomingMessage, res: ServerResponse): void {
   res.setHeader("content-type", "text/html; charset=utf-8");
   res.end(render(apiBase));
-});
+}
 
-server.listen(port, host, () => {
-  console.log(`c402 dashboard listening at http://127.0.0.1:${port}`);
-});
+if (process.env.VERCEL !== "1") {
+  const server = createServer(dashboardHandler);
+  server.listen(port, host, () => {
+    console.log(`c402 dashboard listening at http://127.0.0.1:${port}`);
+  });
+}
 
 function render(apiBaseUrl: string): string {
   return `<!doctype html>
@@ -141,7 +144,7 @@ function render(apiBaseUrl: string): string {
   </section>
 </main>
 <script>
-const apiBase = ${JSON.stringify(apiBaseUrl)};
+const apiBase = ${JSON.stringify(apiBaseUrl)} || window.location.origin;
 async function refresh() {
   const [attestationResult, requests, credit] = await Promise.all([
     getJsonAllowError(apiBase + "/attestation"),

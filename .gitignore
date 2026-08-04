@@ -22,3 +22,4 @@ contracts/cache/
 # FCC local/proxy files can contain DB credentials or deployment keys.
 flare-extension/**/config/extension.env
 flare-extension/**/config/proxy/*.toml
+.vercel
