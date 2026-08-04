@@ -91,40 +91,18 @@ The credit endpoints are currently plain JSON APIs:
 
 These endpoints model agent credit, lender matching, liens, and repayment. They do not currently require x402 payment for every API call.
 
-## Current Status
+## Supported Networks
 
-Credit-only mode works without FCC.
+| Network | Chain ID | Asset | Transfer | Facilitator |
+| --- | --- | --- | --- | --- |
+| Base Sepolia | `eip155:84532` | USDC | EIP-3009 | `https://x402.org/facilitator` |
+| Flare Coston2 | `eip155:114` | testUSDT0 | Permit2 | `/x402/flare-facilitator` |
 
-Base Sepolia uses the public x402 facilitator by default:
-
-```text
-network: eip155:84532
-asset: Base Sepolia USDC
-facilitator: https://x402.org/facilitator
-```
-
-Flare Coston2 uses c402's own facilitator endpoint:
-
-```text
-network: eip155:114
-asset: Coston2 testUSDT0
-facilitator: /x402/flare-facilitator
-transfer method: permit2
-```
-
-The Flare facilitator exposes the standard x402 operations:
+The Flare facilitator uses the standard x402 operations:
 
 - `GET /x402/flare-facilitator/supported`
 - `POST /x402/flare-facilitator/verify`
 - `POST /x402/flare-facilitator/settle`
-
-The deployed `/credit-score` endpoint is disabled until Flare Confidential Compute is configured:
-
-```text
-C402_ENABLE_COMPUTE=false
-```
-
-When FCC is enabled, `/credit-score` becomes the x402-compatible confidential compute endpoint.
 
 ## Future Extension
 

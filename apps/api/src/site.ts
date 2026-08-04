@@ -193,8 +193,14 @@ Selected lender: B</code></pre>
         <li>Liquidation receipt</li>
         <li>Agent credit passport event</li>
       </ul>
-      <h2>Optional confidential compute</h2>
-      <p>When Flare FCC is enabled, c402 can add encrypted inputs, code-hash verification, TEE attestation, and compute receipts to the x402 payment flow.</p>
+      <h2>Networks</h2>
+      <table>
+        <thead><tr><th>Network</th><th>Chain ID</th><th>Role</th><th>Payment asset</th><th>Facilitator</th></tr></thead>
+        <tbody>
+          <tr><td>Base Sepolia</td><td><code>eip155:84532</code></td><td>Primary credit and x402 testnet</td><td>USDC</td><td><code>https://x402.org/facilitator</code></td></tr>
+          <tr><td>Flare Coston2</td><td><code>eip155:114</code></td><td>Flare and confidential-compute testnet</td><td>testUSDT0</td><td><code>/x402/flare-facilitator</code></td></tr>
+        </tbody>
+      </table>
     `
   },
   "/docs/api-reference": {
@@ -212,7 +218,7 @@ GET /llms.txt</code></pre>
       <pre><code>GET  /x402/flare-facilitator/supported
 POST /x402/flare-facilitator/verify
 POST /x402/flare-facilitator/settle</code></pre>
-      <p>Base Sepolia uses the public x402 facilitator. Flare Coston2 uses c402's facilitator endpoint with Permit2 over Coston2 testUSDT0.</p>
+      <p>Base Sepolia uses the public x402 facilitator. Flare Coston2 uses c402's facilitator endpoint.</p>
       <h2>Credit</h2>
       <pre><code>GET  /credit/state
 POST /credit/jobs
@@ -282,8 +288,13 @@ COMPUTE-RECEIPT</code></pre>
       <h2>c402 credit endpoints</h2>
       <p>The credit endpoints are plain JSON APIs today. They model borrowing, lending, liens, repayment, and liquidation. They can be wrapped with x402 payment challenges later if paid API access is required.</p>
       <h2>Networks</h2>
-      <p>Base Sepolia uses <code>https://x402.org/facilitator</code> with Base Sepolia USDC. Flare Coston2 uses <code>/x402/flare-facilitator</code> with Coston2 testUSDT0 and Permit2.</p>
-      <p>If <code>X402_FLARE_FACILITATOR_PRIVATE_KEY</code> is not configured, the service catalog reports <code>facilitator_key_required</code> and the Flare facilitator returns <code>503</code>.</p>
+      <table>
+        <thead><tr><th>Network</th><th>Chain ID</th><th>Asset</th><th>Transfer</th><th>Facilitator</th></tr></thead>
+        <tbody>
+          <tr><td>Base Sepolia</td><td><code>eip155:84532</code></td><td>USDC</td><td>EIP-3009</td><td><code>https://x402.org/facilitator</code></td></tr>
+          <tr><td>Flare Coston2</td><td><code>eip155:114</code></td><td>testUSDT0</td><td>Permit2</td><td><code>/x402/flare-facilitator</code></td></tr>
+        </tbody>
+      </table>
     `
   }
 };
