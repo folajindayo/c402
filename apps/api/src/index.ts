@@ -15,10 +15,12 @@ import { renderDocs, renderLanding, renderLlmsTxt } from "./site.js";
 
 const computeEnabled = env("C402_ENABLE_COMPUTE") === "true";
 const service = computeEnabled ? createConfidentialPaymentService() : undefined;
+const lenderActionTtlSeconds = optionalEnvInteger("C402_LENDER_ACTION_TTL_SECONDS");
 const credit = new AgentCreditService({
   endpoint: env("C402_CREDIT_ENDPOINT") ?? env("C402_PUBLIC_URL"),
   network: env("C402_NETWORK"),
-  asset: env("C402_ASSET")
+  asset: env("C402_ASSET"),
+  lenderActionTtlMs: lenderActionTtlSeconds ? lenderActionTtlSeconds * 1000 : undefined
 });
 if (service) await service.warmup();
 
@@ -107,6 +109,9 @@ export default async function apiHandler(req: IncomingMessage, res: ServerRespon
     if (req.method === "POST" && url.pathname === "/credit/match") {
       const body = await readJson(req);
       return sendJson(res, 200, credit.matchCredit(requiredString(body, "offerId")));
+    }
+    if (req.method === "POST" && url.pathname === "/credit/dispatch") {
+      return sendJson(res, 200, { dispatched: credit.dispatchPendingCredit() });
     }
     if (req.method === "POST" && url.pathname.startsWith("/credit/offers/") && url.pathname.endsWith("/supplier-payment")) {
       const offerId = decodeURIComponent(url.pathname.slice("/credit/offers/".length, -"/supplier-payment".length));
@@ -276,6 +281,12 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
       },
       {
         method: "POST",
+        path: "/credit/dispatch",
+        price: "free",
+        purpose: "Expire missed lender leases and rematch pending offers to the next eligible lender."
+      },
+      {
+        method: "POST",
         path: "/credit/jobs/{jobId}/collateral",
         price: "free",
         purpose: "Post borrower or sponsor collateral that can be liquidated if repayment terms are broken."
@@ -420,6 +431,9 @@ function openApi(baseUrl: string): Record<string, unknown> {
       "/credit/match": {
         post: { summary: "Match offer to lender agent", responses: { "200": { description: "Selected lender match" } } }
       },
+      "/credit/dispatch": {
+        post: { summary: "Expire stale matches and dispatch pending credit offers", responses: { "200": { description: "Dispatch results" } } }
+      },
       "/credit/offers/{offerId}/supplier-payment": {
         post: { summary: "Record lender-to-supplier payment", responses: { "200": { description: "Supplier advance" } } }
       },
@@ -445,6 +459,16 @@ function openApi(baseUrl: string): Record<string, unknown> {
 function env(name: string): string | undefined {
   const value = process.env[name]?.trim();
   return value ? value : undefined;
+}
+
+function optionalEnvInteger(name: string): number | undefined {
+  const value = env(name);
+  if (!value) return undefined;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return parsed;
 }
 
 function registerLender(body: Record<string, unknown>): Record<string, unknown> {

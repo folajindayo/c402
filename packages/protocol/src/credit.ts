@@ -36,14 +36,20 @@ export interface LenderMatch {
   requestId: string;
   lenderId: string;
   lenderAgent: string;
+  status: "active" | "expired" | "fulfilled";
   score: number;
   feeBps: number;
   amountAtomic: string;
   feeAtomic: string;
   supplier: string;
   supplierDomain: string;
+  actionExpiresAt: string;
   expiresAt: string;
   createdAt: string;
+  updatedAt: string;
+  missedAt?: string;
+  fulfilledAt?: string;
+  failureReason?: string;
 }
 
 export interface FundedJob {

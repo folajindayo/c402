@@ -92,8 +92,8 @@ function render(apiBaseUrl: string): string {
   <section class="panel" style="margin-top: 16px;">
     <h2>Credit Matches</h2>
     <table>
-      <thead><tr><th>Match</th><th>Lender</th><th>Offer</th><th>Amount</th><th>Score</th></tr></thead>
-      <tbody id="matches"><tr><td colspan="5">loading</td></tr></tbody>
+      <thead><tr><th>Match</th><th>Lender</th><th>Offer</th><th>Amount</th><th>Status</th><th>Lease Expires</th><th>Score</th></tr></thead>
+      <tbody id="matches"><tr><td colspan="7">loading</td></tr></tbody>
     </table>
   </section>
   <section class="panel" style="margin-top: 16px;">
@@ -172,7 +172,7 @@ async function refresh() {
   }).join("") || "<tr><td colspan='5'>No credit jobs yet</td></tr>";
   document.getElementById("backingSources").innerHTML = (credit.backingSources || []).map(row => "<tr><td>" + row.sourceId + "</td><td>" + row.productType + "</td><td>" + row.agent + "</td><td>" + money(row.valueAtomic) + " " + row.asset + "</td><td>" + money(row.liquidationValueAtomic) + "</td><td>" + money(row.lockedAtomic) + "</td><td>" + row.verifier + "</td></tr>").join("") || "<tr><td colspan='7'>No backing sources yet</td></tr>";
   document.getElementById("lenders").innerHTML = (credit.lenders || []).map(row => "<tr><td>" + row.agent + "</td><td>" + money(row.availableLiquidityAtomic) + " " + row.asset + "</td><td>" + row.minFeeBps + " bps</td><td>" + row.allowedSupplierDomains.join(", ") + "</td><td>" + row.status + "</td></tr>").join("") || "<tr><td colspan='5'>No lender agents yet</td></tr>";
-  document.getElementById("matches").innerHTML = (credit.matches || []).map(row => "<tr><td>" + row.matchId + "</td><td>" + row.lenderAgent + "</td><td>" + row.offerId + "</td><td>" + money(row.amountAtomic) + "</td><td>" + row.score + "</td></tr>").join("") || "<tr><td colspan='5'>No matches yet</td></tr>";
+  document.getElementById("matches").innerHTML = (credit.matches || []).map(row => "<tr><td>" + row.matchId + "</td><td>" + row.lenderAgent + "</td><td>" + row.offerId + "</td><td>" + money(row.amountAtomic) + "</td><td>" + row.status + "</td><td>" + (row.actionExpiresAt || "") + "</td><td>" + row.score + "</td></tr>").join("") || "<tr><td colspan='7'>No matches yet</td></tr>";
   document.getElementById("liens").innerHTML = (credit.liens || []).map(row => "<tr><td>" + row.repaymentSource + "</td><td>" + row.productType + "</td><td>" + row.lender + "</td><td>" + money(row.seniorClaimAtomic) + "</td><td>" + money(row.collateralLockedAtomic) + "</td><td>" + row.status + "</td></tr>").join("") || "<tr><td colspan='6'>No liens yet</td></tr>";
   document.getElementById("liquidations").innerHTML = (credit.liquidations || []).map(row => "<tr><td>" + row.advanceId + "</td><td>" + row.lender + "</td><td>" + money(row.collateralPaidAtomic) + "</td><td>" + money(row.reservePaidAtomic) + "</td><td>" + money(row.shortfallAtomic) + "</td></tr>").join("") || "<tr><td colspan='5'>No liquidations yet</td></tr>";
   document.getElementById("passport").innerHTML = (credit.passport || []).map(row => "<tr><td>" + row.agent + "</td><td>" + row.event + "</td><td>" + row.scoreDelta + "</td><td>" + money(row.creditLimitAtomic) + "</td><td>" + row.createdAt + "</td></tr>").join("") || "<tr><td colspan='5'>No passport events yet</td></tr>";

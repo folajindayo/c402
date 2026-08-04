@@ -166,6 +166,9 @@ Selected lender: B</code></pre>
         <li>Sign the returned <code>paySupplier</code> transaction from the funded wallet.</li>
         <li>Report the transaction hash to <code>POST /credit/offers/{offerId}/supplier-payment</code>.</li>
       </ol>
+      <h2>Missed order handling</h2>
+      <p>Each lender match is a short-lived lease. If the selected wallet does not pay the supplier before the lease expires, c402 marks that match expired, reduces lender reliability, and rematches the offer to the next eligible lender. Late supplier-payment reports are rejected.</p>
+      <pre><code>POST /credit/dispatch</code></pre>
       <h2>Recovery order</h2>
       <ol>
         <li>Repayment source revenue</li>
@@ -241,6 +244,7 @@ POST /credit/backing-sources
 GET  /credit/backing-sources
 POST /credit/request
 POST /credit/match
+POST /credit/dispatch
 POST /credit/offers/{offerId}/supplier-payment
 POST /credit/jobs/{jobId}/complete
 POST /credit/advances/{advanceId}/repay

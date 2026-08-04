@@ -82,6 +82,7 @@ export interface AgentCreditServiceOptions {
   endpoint?: string;
   network?: string;
   asset?: string;
+  lenderActionTtlMs?: number;
 }
 
 export class AgentCreditService {
@@ -104,8 +105,11 @@ export class AgentCreditService {
   private readonly lenderShortfalls = new Map<string, bigint>();
   private insuranceReserve = 0n;
   private readonly minCollateralBps = 2000;
+  private readonly lenderActionTtlMs: number;
 
-  constructor(private readonly options: AgentCreditServiceOptions = {}) {}
+  constructor(private readonly options: AgentCreditServiceOptions = {}) {
+    this.lenderActionTtlMs = options.lenderActionTtlMs ?? 120_000;
+  }
 
   readonly policy: SpendingPolicy = {
     allowedUses: ["compute", "data", "storage", "approved-x402-service"],
@@ -268,6 +272,7 @@ export class AgentCreditService {
   }
 
   matchCredit(offerId: string): { offer: CreditOffer; request: CreditRequest; decision: UnderwritingDecision; match?: LenderMatch; eligibleLenders: number } {
+    this.expireStaleMatches();
     const offer = this.getOffer(offerId);
     verifyCreditOffer(offer, this.signer.publicKey);
     const request = this.getRequest(offer.requestId);
@@ -276,7 +281,17 @@ export class AgentCreditService {
       return { offer, request, decision, eligibleLenders: 0 };
     }
 
+    const existing = Array.from(this.matches.values()).find((item) => item.offerId === offer.offerId && item.status === "active");
+    if (existing) {
+      return { offer, request, decision, match: existing, eligibleLenders: 1 };
+    }
+
+    const skippedLenderIds = new Set(Array.from(this.matches.values())
+      .filter((match) => match.offerId === offer.offerId && match.status === "expired")
+      .map((match) => match.lenderId));
+
     const candidates = Array.from(this.lenders.values())
+      .filter((lender) => !skippedLenderIds.has(lender.lenderId))
       .map((lender) => ({
         lender,
         score: scoreLenderForRequest({
@@ -296,31 +311,32 @@ export class AgentCreditService {
       return { offer, request, decision, eligibleLenders: 0 };
     }
 
-    const existing = Array.from(this.matches.values()).find((item) => item.offerId === offer.offerId);
-    if (existing) {
-      return { offer, request, decision, match: existing, eligibleLenders: candidates.length };
-    }
-
+    const now = new Date();
+    const actionExpiresAt = new Date(Math.min(now.getTime() + this.lenderActionTtlMs, Date.parse(offer.expiresAt))).toISOString();
     const match: LenderMatch = {
       matchId: `match-${randomHex(8)}`,
       offerId: offer.offerId,
       requestId: request.requestId,
       lenderId: selected.lender.lenderId,
       lenderAgent: selected.lender.agent,
+      status: "active",
       score: selected.score,
       feeBps: selected.lender.minFeeBps,
       amountAtomic: offer.approvedAmountAtomic,
       feeAtomic: lenderFeeFor(BigInt(offer.approvedAmountAtomic), selected.lender.minFeeBps).toString(),
       supplier: request.supplier,
       supplierDomain: request.supplierDomain,
+      actionExpiresAt,
       expiresAt: offer.expiresAt,
-      createdAt: new Date().toISOString()
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString()
     };
     this.matches.set(match.matchId, match);
     return { offer, request, decision, match, eligibleLenders: candidates.length };
   }
 
   recordDirectSupplierPayment(input: { offerId: string; lender: string; supplierPaymentId: string }): CreditAdvance {
+    this.expireStaleMatches();
     if (!input.lender) {
       throw new C402Error("missing_lender", "lender is required", 400);
     }
@@ -330,11 +346,18 @@ export class AgentCreditService {
     const offer = this.getOffer(input.offerId);
     verifyCreditOffer(offer, this.signer.publicKey);
     const request = this.getRequest(offer.requestId);
-    const match = Array.from(this.matches.values()).find((item) => item.offerId === offer.offerId);
-    if (match && !sameAddress(match.lenderAgent, input.lender)) {
+    const match = Array.from(this.matches.values()).find((item) => item.offerId === offer.offerId && item.status === "active");
+    if (!match) {
+      throw new C402Error("match_not_active", "supplier payment requires an active lender match", 409);
+    }
+    if (!sameAddress(match.lenderAgent, input.lender)) {
       throw new C402Error("lender_mismatch", "supplier payment lender does not match the selected lender agent", 409);
     }
-    const feeAtomic = match?.feeAtomic ?? offer.feeAtomic;
+    if (Date.parse(match.actionExpiresAt) <= Date.now()) {
+      this.expireStaleMatches();
+      throw new C402Error("match_expired", "lender action lease expired before supplier payment was recorded", 409);
+    }
+    const feeAtomic = match.feeAtomic;
     const seniorClaimAtomic = (BigInt(offer.approvedAmountAtomic) + BigInt(feeAtomic)).toString();
     const advance: CreditAdvance = {
       advanceId: `adv-${offer.requestId}`,
@@ -374,11 +397,15 @@ export class AgentCreditService {
         lender.availableLiquidityAtomic = (BigInt(lender.availableLiquidityAtomic) - BigInt(offer.approvedAmountAtomic)).toString();
         lender.updatedAt = new Date().toISOString();
       }
+      match.status = "fulfilled";
+      match.fulfilledAt = new Date().toISOString();
+      match.updatedAt = match.fulfilledAt;
     }
     return advance;
   }
 
   lenderFundingActions(lenderAgent: string): { lender: LenderProfile; actions: LenderFundingAction[] } {
+    this.expireStaleMatches();
     const lender = Array.from(this.lenders.values()).find((item) => sameAddress(item.agent, lenderAgent));
     if (!lender) {
       throw new C402Error("lender_not_found", `lender agent ${lenderAgent} not found`, 404);
@@ -387,6 +414,7 @@ export class AgentCreditService {
     const now = Date.now();
     const actions = Array.from(this.matches.values())
       .filter((match) => sameAddress(match.lenderAgent, lender.agent))
+      .filter((match) => match.status === "active")
       .filter((match) => !Array.from(this.advances.values()).some((advance) => advance.offerId === match.offerId))
       .map((match) => {
         const offer = this.getOffer(match.offerId);
@@ -412,11 +440,23 @@ export class AgentCreditService {
         amountAtomic: offer.approvedAmountAtomic,
         feeAtomic: match.feeAtomic,
         durationSeconds: request.durationSeconds,
-        expiresAt: offer.expiresAt,
+        expiresAt: match.actionExpiresAt,
         createdAt: match.createdAt
       }));
 
     return { lender, actions };
+  }
+
+  dispatchPendingCredit(): Array<{ offer: CreditOffer; request: CreditRequest; decision: UnderwritingDecision; match?: LenderMatch; eligibleLenders: number }> {
+    this.expireStaleMatches();
+    const results: Array<{ offer: CreditOffer; request: CreditRequest; decision: UnderwritingDecision; match?: LenderMatch; eligibleLenders: number }> = [];
+    for (const offer of this.offers.values()) {
+      const hasAdvance = Array.from(this.advances.values()).some((advance) => advance.offerId === offer.offerId);
+      const hasActiveMatch = Array.from(this.matches.values()).some((match) => match.offerId === offer.offerId && match.status === "active");
+      if (hasAdvance || hasActiveMatch || Date.parse(offer.expiresAt) <= Date.now()) continue;
+      results.push(this.matchCredit(offer.offerId));
+    }
+    return results;
   }
 
   completeJob(jobId: string, advanceId: string): RepaymentReceipt {
@@ -576,6 +616,7 @@ export class AgentCreditService {
   }
 
   state(): CreditFlowState & { formatted: Record<string, string | string[]> } {
+    this.expireStaleMatches();
     return {
       jobs: Array.from(this.jobs.values()),
       backingSources: Array.from(this.backingSources.values()),
@@ -741,6 +782,29 @@ export class AgentCreditService {
     return Array.from(this.liens.values())
       .filter((lien) => lien.repaymentSource === repaymentSource && (lien.status === "active" || lien.status === "defaulted"))
       .reduce((total, lien) => total + BigInt(lien.seniorClaimAtomic), 0n);
+  }
+
+  private expireStaleMatches(now = Date.now()): void {
+    for (const match of this.matches.values()) {
+      if (match.status !== "active") continue;
+      if (Array.from(this.advances.values()).some((advance) => advance.offerId === match.offerId)) continue;
+      if (Date.parse(match.actionExpiresAt) > now && Date.parse(match.expiresAt) > now) continue;
+
+      const missedAt = new Date(now).toISOString();
+      match.status = "expired";
+      match.missedAt = missedAt;
+      match.updatedAt = missedAt;
+      match.failureReason = Date.parse(match.expiresAt) <= now ? "offer_expired" : "lender_action_timeout";
+
+      const lender = this.lenders.get(match.lenderId);
+      if (lender) {
+        lender.reputationScore = Math.max(0, lender.reputationScore - 5);
+        if (lender.reputationScore < 10) {
+          lender.status = "paused";
+        }
+        lender.updatedAt = missedAt;
+      }
+    }
   }
 
   private recordErc8004Feedback(
