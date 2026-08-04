@@ -62,8 +62,9 @@ Copy `.env.production.example` and set real values:
 ```bash
 C402_PUBLIC_URL=https://your-api.example
 C402_CREDIT_ENDPOINT=https://your-api.example/credit
-C402_CREDIT_CONTRACT=0x...
-C402_CREDIT_NETWORK=eip155:114
+C402_CREDIT_CONTRACT=<base-sepolia-c402-credit-intent-address>
+C402_CREDIT_NETWORK=eip155:84532
+C402_CREDIT_RPC_URL=https://sepolia.base.org
 
 C402_NETWORK=eip155:84532
 C402_ASSET=0x036CbD53842c5426634e7929541eC2318f3dCF7e

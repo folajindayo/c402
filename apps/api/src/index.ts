@@ -191,13 +191,14 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
       confidentialCompute: computeEnabled ? "available" : "disabled_until_fcc_proxy_registered"
     },
     testnet: {
-      creditContract: env("C402_CREDIT_CONTRACT") ?? "0x170864d2086D3ee15B43dD1092347D6FA73E0702",
-      creditNetwork: env("C402_CREDIT_NETWORK") ?? "eip155:114",
+      creditContract: baseSepoliaCreditContract(),
+      creditNetwork: env("C402_CREDIT_NETWORK") ?? "eip155:84532",
       x402Network: env("C402_NETWORK") ?? "eip155:84532",
       x402Asset: env("C402_ASSET") ?? "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
       payTo: env("C402_PAY_TO") ?? "0x21b805BBC4bfFA7769868BF7f488D77b71756d3E",
       erc8004AgentId: env("ERC8004_AGENT_ID") ?? "8681"
     },
+    supportedNetworks: supportedNetworks(),
     endpoints: [
       {
         method: "POST",
@@ -269,6 +270,53 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
       }
     ]
   };
+}
+
+function supportedNetworks(): Array<Record<string, unknown>> {
+  return [
+    {
+      chainId: 84532,
+      network: "eip155:84532",
+      name: "Base Sepolia",
+      role: "primary-testnet",
+      rpcUrl: "https://sepolia.base.org",
+      creditContract: baseSepoliaCreditContract(),
+      creditContractStatus: baseSepoliaCreditContract() ? "deployed" : "deployment_required",
+      x402: {
+        asset: env("C402_ASSET") ?? "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+        assetSymbol: "USDC",
+        assetDecimals: 6,
+        facilitatorUrl: env("X402_FACILITATOR_URL") ?? "https://x402.org/facilitator",
+        payTo: env("C402_PAY_TO") ?? "0x21b805BBC4bfFA7769868BF7f488D77b71756d3E"
+      },
+      erc8004: {
+        identityRegistry: env("ERC8004_IDENTITY_REGISTRY") ?? "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+        reputationRegistry: env("ERC8004_REPUTATION_REGISTRY") ?? "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+        writer: env("ERC8004_WRITER") ?? "0x319C508cb5b4ffd0e04b628e21B1399a4413C4e7",
+        agentId: env("ERC8004_AGENT_ID") ?? "8681"
+      }
+    },
+    {
+      chainId: 114,
+      network: "eip155:114",
+      name: "Flare Coston2",
+      role: "confidential-compute-testnet",
+      rpcUrl: "https://coston2-api.flare.network/ext/C/rpc",
+      creditContract: env("C402_COSTON2_CREDIT_CONTRACT") ?? "0x170864d2086D3ee15B43dD1092347D6FA73E0702",
+      creditContractStatus: "legacy-testnet",
+      confidentialCompute: {
+        enabled: computeEnabled,
+        proxyUrlConfigured: Boolean(env("C402_FCC_PROXY_URL")),
+        extensionId: env("C402_FCC_EXTENSION_ID") ?? ""
+      }
+    }
+  ];
+}
+
+function baseSepoliaCreditContract(): string {
+  const explicit = env("C402_BASE_SEPOLIA_CREDIT_CONTRACT");
+  if (explicit) return explicit;
+  return env("C402_CREDIT_NETWORK") === "eip155:84532" ? env("C402_CREDIT_CONTRACT") ?? "" : "";
 }
 
 function openApi(baseUrl: string): Record<string, unknown> {

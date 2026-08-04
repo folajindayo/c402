@@ -8,13 +8,16 @@ Deploy the API and dashboard as normal Node services. Vercel, Fly.io, Render, Ra
 C402_PUBLIC_URL=https://your-api.example
 C402_CREDIT_ENDPOINT=https://your-api.example/credit
 C402_CREDIT_CONTRACT=0x...
-C402_CREDIT_NETWORK=eip155:114
+C402_CREDIT_NETWORK=eip155:84532
+C402_CREDIT_RPC_URL=https://sepolia.base.org
 C402_NETWORK=eip155:84532
 C402_ASSET=0x036CbD53842c5426634e7929541eC2318f3dCF7e
 C402_PAY_TO=0x...
 X402_FACILITATOR_URL=https://x402.org/facilitator
 C402_ENABLE_COMPUTE=false
 ```
+
+Base Sepolia is the primary public testnet for c402 credit and x402 payments. Flare Coston2 remains the optional confidential-compute network for FCC-backed underwriting and receipts.
 
 ## Optional FCC Environment
 
