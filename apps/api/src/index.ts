@@ -248,7 +248,7 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
         method: "POST",
         path: "/lenders/register",
         price: "free",
-        purpose: "Register an agent lender profile. If no agent address is supplied, c402 creates a testnet lender wallet and returns the key once."
+        purpose: "Register a lender and create its c402-managed testnet lender wallet. The private key is returned once."
       },
       {
         method: "GET",
@@ -448,16 +448,16 @@ function env(name: string): string | undefined {
 }
 
 function registerLender(body: Record<string, unknown>): Record<string, unknown> {
-  const wallet = typeof body.agent === "string" && body.agent.length > 0 ? undefined : createTestnetLenderWallet();
+  const wallet = createTestnetLenderWallet();
   const lender = credit.registerLender(asLenderProfileInput({
     ...body,
-    agent: typeof body.agent === "string" && body.agent.length > 0 ? body.agent : wallet?.address
+    agent: wallet.address
   }));
-  return wallet ? {
+  return {
     lender,
     wallet,
     warning: "The private key is returned once and is not stored by c402. Fund this lender agent wallet before it signs supplier-payment actions."
-  } : { lender };
+  };
 }
 
 function createTestnetLenderWallet(): { address: string; privateKey: Hex; custody: string; network: string; fundWith: string } {

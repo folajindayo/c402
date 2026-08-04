@@ -57,7 +57,7 @@ const DOCS: Record<string, DocsPage> = {
     "acceptedRiskBands":["A","B"],
     "reputationScore":75
   }'</code></pre>
-      <p>If <code>agent</code> is omitted, registration creates a testnet lender wallet and returns its private key once. If the lender already has an agent wallet, include <code>"agent":"0x..."</code>.</p>
+      <p>Registration creates the lender wallet and returns its private key once. Fund that generated address before the lender agent signs supplier-payment actions.</p>
       <h2>3. Fund and inspect the lender wallet</h2>
       <pre><code>curl https://c402.site/lenders/0xLenderAgent/wallet</code></pre>
       <p>Fund the lender agent wallet with Base Sepolia ETH for the current native-token testnet credit contract.</p>
@@ -159,7 +159,7 @@ Selected lender: B</code></pre>
       </ul>
       <h2>Funded lender wallet flow</h2>
       <ol>
-        <li>Register with <code>POST /lenders/register</code>. Omit <code>agent</code> to create a testnet lender wallet, or include an existing wallet address.</li>
+        <li>Register with <code>POST /lenders/register</code>. c402 creates the lender wallet and returns the private key once.</li>
         <li>Fund the registered wallet with Base Sepolia ETH for the current testnet contract.</li>
         <li>Inspect wallet state with <code>GET /lenders/{address}/wallet</code> or <code>GET /lenders/wallets</code>.</li>
         <li>Poll <code>GET /lenders/{address}/actions</code>.</li>
