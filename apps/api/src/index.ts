@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { C402Error, type CreditProductType, type Purpose } from "@c402/protocol";
 import { createFccAdapterFromEnv } from "@c402/fcc-adapter";
 import { AgentCreditService, ConfidentialPaymentService, createConfigFromEnv } from "@c402/server";
+import { renderDocs, renderLanding, renderLlmsTxt } from "./site.js";
 
 const computeEnabled = env("C402_ENABLE_COMPUTE") === "true";
 const service = computeEnabled ? createConfidentialPaymentService() : undefined;
@@ -25,7 +26,16 @@ export default async function apiHandler(req: IncomingMessage, res: ServerRespon
     if (req.method === "GET" && url.pathname === "/health") {
       return sendJson(res, 200, { ok: true, service: "c402-api" });
     }
-    if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/.well-known/c402.json" || url.pathname === "/v1/services/catalog")) {
+    if (req.method === "GET" && url.pathname === "/") {
+      return sendHtml(res, 200, isDocsHost(req) ? renderDocs("/docs") : renderLanding(publicBaseUrl(req)));
+    }
+    if (req.method === "GET" && (url.pathname === "/docs" || url.pathname.startsWith("/docs/"))) {
+      return sendHtml(res, 200, renderDocs(url.pathname.replace(/\/$/, "")));
+    }
+    if (req.method === "GET" && (url.pathname === "/llms.txt" || url.pathname === "/docs/llms.txt")) {
+      return sendText(res, 200, renderLlmsTxt(publicBaseUrl(req)));
+    }
+    if (req.method === "GET" && (url.pathname === "/.well-known/c402.json" || url.pathname === "/v1/services/catalog")) {
       return sendJson(res, 200, serviceCatalog(publicBaseUrl(req)));
     }
     if (req.method === "GET" && url.pathname === "/openapi.json") {
@@ -163,6 +173,11 @@ function sendComputeDisabled(res: ServerResponse): void {
 
 function publicBaseUrl(req: IncomingMessage): string {
   return env("C402_PUBLIC_URL") ?? `${req.headers["x-forwarded-proto"] ?? "http"}://${req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost"}`;
+}
+
+function isDocsHost(req: IncomingMessage): boolean {
+  const host = String(req.headers["x-forwarded-host"] ?? req.headers.host ?? "").toLowerCase();
+  return host.startsWith("docs.");
 }
 
 function serviceCatalog(baseUrl: string): Record<string, unknown> {
@@ -331,6 +346,20 @@ function sendJson(res: ServerResponse, status: number, body: unknown, headers: R
   }
   res.statusCode = status;
   res.end(JSON.stringify(body, null, 2));
+}
+
+function sendHtml(res: ServerResponse, status: number, body: string): void {
+  setCorsHeaders(res);
+  res.setHeader("content-type", "text/html; charset=utf-8");
+  res.statusCode = status;
+  res.end(body);
+}
+
+function sendText(res: ServerResponse, status: number, body: string): void {
+  setCorsHeaders(res);
+  res.setHeader("content-type", "text/plain; charset=utf-8");
+  res.statusCode = status;
+  res.end(body);
 }
 
 function setCorsHeaders(res: ServerResponse): void {

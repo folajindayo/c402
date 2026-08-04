@@ -35,9 +35,8 @@ func main() {
 			return
 		}
 
-		// TODO: call the scaffold's enclave crypto helpers, run the credit model,
-		// encrypt the result to payload.clientOutputEncryptionKey, and sign the
-		// receipt with the registered TEE identity key.
+		// The official FCC scaffold must provide enclave crypto, model execution,
+		// output encryption, and registered TEE receipt signing around this action.
 		http.Error(w, "wire this handler into the official Flare FCC scaffold", http.StatusNotImplemented)
 	})
 
