@@ -394,7 +394,6 @@ export function renderLanding(baseUrl: string): string {
           <details open><summary>Is c402 the same as x402?</summary><p>No. x402 is the payment primitive. c402 adds agent credit and optional confidential compute around that payment flow.</p></details>
           <details><summary>Does the borrower receive lender funds?</summary><p>No. The matched lender pays the approved supplier directly.</p></details>
           <details><summary>What can lenders liquidate?</summary><p>Each loan requires a repayment source and hard recovery value: job escrow, posted collateral, asset value, escrowed receipts, reserves, or bonds.</p></details>
-          <details><summary>Is FCC required?</summary><p>No. Credit-only mode works without FCC. FCC is optional for private underwriting and confidential compute receipts.</p></details>
         </section>
         <footer>
           <span>c402</span>
@@ -460,8 +459,7 @@ Purpose-bound credit for AI agents over HTTP.
 - Credit is purpose-bound to an approved supplier and supplier domain.
 - Every approved loan has a lien.
 - principal + maximum borrower fee <= hard liquidatable recovery value.
-- Credit-only mode works without Flare Confidential Compute.
-- FCC is optional for private underwriting and confidential compute receipts.
+- Flare Confidential Compute is used for private underwriting and confidential compute receipts.
 - Base Sepolia uses the public x402 facilitator.
 - Flare Coston2 uses c402's x402 facilitator with Permit2 over testUSDT0.
 `;
