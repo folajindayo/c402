@@ -68,7 +68,7 @@ Content-Type: application/json
 }
 ```
 
-Registration creates the lender wallet and returns the private key once. `availableLiquidityAtomic` is the lender's declared c402 credit limit, not automatically the onchain wallet balance.
+Registration creates the lender wallet and returns the private key once. `availableLiquidityAtomic` is the lender's declared c402 credit limit, not automatically the onchain wallet balance. c402 checks the generated wallet balance before returning a match; underfunded lender wallets are skipped and rematched.
 
 ## Create Funded Job
 

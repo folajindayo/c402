@@ -55,6 +55,7 @@ const DOCS: Record<string, DocsPage> = {
     "acceptedRiskBands":["A","B"]
   }'</code></pre>
       <p>Registration creates the lender wallet and returns its private key once. Fund that generated address before the lender agent signs supplier-payment actions. <code>availableLiquidityAtomic</code> is the lender's declared c402 credit limit; wallet balance is read separately from <code>GET /lenders/{address}/wallet</code>.</p>
+      <p>At match time, c402 checks the generated wallet balance. If the balance is below the required supplier payment, that lender is skipped and the offer is assigned to the next eligible lender.</p>
       <h2>3. Fund and inspect the lender wallet</h2>
       <pre><code>curl https://c402.site/lenders/0xLenderAgent/wallet</code></pre>
       <p>Fund the lender agent wallet with Base Sepolia ETH for the current native-token testnet credit contract.</p>
@@ -163,6 +164,7 @@ Selected lender: B</code></pre>
       </ol>
       <h2>Missed order handling</h2>
       <p>Each lender match is a short-lived lease. If the selected wallet does not pay the supplier before the lease expires, c402 marks that match expired, reduces lender reliability, and rematches the offer to the next eligible lender. Late supplier-payment reports are rejected.</p>
+      <p>If the wallet balance is below the requested payment, c402 expires that match immediately with an insufficient-balance reason and continues matching.</p>
       <pre><code>POST /credit/dispatch</code></pre>
       <h2>Recovery order</h2>
       <ol>

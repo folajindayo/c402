@@ -455,6 +455,26 @@ export class AgentCreditService {
     return results;
   }
 
+  expireMatchForInsufficientBalance(matchId: string, observedBalanceAtomic: string): LenderMatch {
+    const match = this.matches.get(matchId);
+    if (!match) {
+      throw new C402Error("match_not_found", `match ${matchId} not found`, 404);
+    }
+    if (match.status !== "active") return match;
+    const now = new Date().toISOString();
+    match.status = "expired";
+    match.missedAt = now;
+    match.updatedAt = now;
+    match.failureReason = `insufficient_balance:${observedBalanceAtomic}`;
+
+    const lender = this.lenders.get(match.lenderId);
+    if (lender) {
+      lender.reputationScore = Math.max(0, lender.reputationScore - 2);
+      lender.updatedAt = now;
+    }
+    return match;
+  }
+
   completeJob(jobId: string, advanceId: string): RepaymentReceipt {
     const job = this.getJob(jobId);
     return this.repayAdvance({

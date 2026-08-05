@@ -108,10 +108,10 @@ export default async function apiHandler(req: IncomingMessage, res: ServerRespon
     }
     if (req.method === "POST" && url.pathname === "/credit/match") {
       const body = await readJson(req);
-      return sendJson(res, 200, credit.matchCredit(requiredString(body, "offerId")));
+      return sendJson(res, 200, await matchCreditWithFundingCheck(requiredString(body, "offerId")));
     }
     if (req.method === "POST" && url.pathname === "/credit/dispatch") {
-      return sendJson(res, 200, { dispatched: credit.dispatchPendingCredit() });
+      return sendJson(res, 200, { dispatched: await dispatchCreditWithFundingCheck() });
     }
     if (req.method === "POST" && url.pathname.startsWith("/credit/offers/") && url.pathname.endsWith("/supplier-payment")) {
       const offerId = decodeURIComponent(url.pathname.slice("/credit/offers/".length, -"/supplier-payment".length));
@@ -526,6 +526,47 @@ async function lenderWalletSummary(lenderAgent: string): Promise<Record<string, 
       supplierPaymentId: advance.supplierPaymentId,
       paidAt: advance.paidAt
     }))
+  };
+}
+
+async function matchCreditWithFundingCheck(offerId: string): Promise<Record<string, unknown>> {
+  const skipped: Array<{ lender: string; matchId: string; observedBalanceAtomic: string; requiredAtomic: string }> = [];
+  for (;;) {
+    const result = credit.matchCredit(offerId);
+    if (!result.match) return { ...result, fundingCheck: { status: "no_match", skipped } };
+    const check = await lenderHasEnoughBalance(result.match.lenderAgent, result.match.amountAtomic);
+    if (check.status === "unavailable") {
+      return { ...result, fundingCheck: { status: "unavailable", skipped } };
+    }
+    if (check.ok) {
+      return { ...result, fundingCheck: { status: "sufficient", observedBalanceAtomic: check.balanceAtomic, requiredAtomic: result.match.amountAtomic, skipped } };
+    }
+    credit.expireMatchForInsufficientBalance(result.match.matchId, check.balanceAtomic);
+    skipped.push({
+      lender: result.match.lenderAgent,
+      matchId: result.match.matchId,
+      observedBalanceAtomic: check.balanceAtomic,
+      requiredAtomic: result.match.amountAtomic
+    });
+  }
+}
+
+async function dispatchCreditWithFundingCheck(): Promise<Record<string, unknown>[]> {
+  const dispatched = credit.dispatchPendingCredit();
+  const checked: Record<string, unknown>[] = [];
+  for (const item of dispatched) {
+    checked.push(item.match ? await matchCreditWithFundingCheck(item.offer.offerId) : { ...item, fundingCheck: { status: "no_match", skipped: [] } });
+  }
+  return checked;
+}
+
+async function lenderHasEnoughBalance(address: string, requiredAtomic: string): Promise<{ status: "available"; ok: boolean; balanceAtomic: string } | { status: "unavailable" }> {
+  const balanceAtomic = await nativeBalance(address);
+  if (balanceAtomic === undefined) return { status: "unavailable" };
+  return {
+    status: "available",
+    ok: BigInt(balanceAtomic) >= BigInt(requiredAtomic),
+    balanceAtomic
   };
 }
 
