@@ -87,6 +87,10 @@ export interface AgentCreditServiceOptions {
   lenderActionTtlMs?: number;
 }
 
+function selectedAssetForNetwork(lender: LenderProfile, network: string): string {
+  return lender.assets?.[network] ?? lender.asset;
+}
+
 export class AgentCreditService {
   private readonly signer = generateSigningKeyPair();
   private readonly jobs = new Map<string, FundedJob>();
@@ -126,6 +130,7 @@ export class AgentCreditService {
     agentRef?: Erc8004AgentRef;
     escrowAmountAtomic: string;
     asset?: string;
+    assets?: Record<string, string>;
     description: string;
   }): FundedJob {
     const job: FundedJob = {
@@ -203,6 +208,8 @@ export class AgentCreditService {
 
   requestCredit(input: {
     agent: string;
+    network?: string;
+    asset?: string;
     productType?: CreditProductType;
     amountAtomic: string;
     purpose: Purpose;
@@ -234,6 +241,7 @@ export class AgentCreditService {
     agent: string;
     availableLiquidityAtomic: string;
     asset?: string;
+    assets?: Record<string, string>;
     networks?: string[];
     minFeeBps?: number;
     maxDurationSeconds?: number;
@@ -247,6 +255,7 @@ export class AgentCreditService {
       agent: input.agent,
       availableLiquidityAtomic: input.availableLiquidityAtomic,
       asset: input.asset ?? this.options.asset ?? "USDC",
+      assets: input.assets,
       networks: input.networks?.length ? input.networks : [this.options.network ?? "eip155:84532"],
       minFeeBps: input.minFeeBps ?? 300,
       maxDurationSeconds: input.maxDurationSeconds ?? 86_400,
@@ -297,8 +306,8 @@ export class AgentCreditService {
           request,
           decision,
           offer,
-          network: this.options.network ?? "eip155:84532",
-          asset: this.options.asset ?? "USDC"
+          network: request.network ?? this.options.network ?? "eip155:84532",
+          asset: request.asset ?? selectedAssetForNetwork(lender, request.network ?? this.options.network ?? "eip155:84532")
         })
       }))
       .filter((item): item is { lender: LenderProfile; score: number } => typeof item.score === "number")
@@ -435,8 +444,8 @@ export class AgentCreditService {
         supplier: request.supplier,
         supplierDomain: request.supplierDomain,
         purpose: request.purpose,
-        asset: lender.asset,
-        network: lender.networks[0] ?? this.options.network ?? "eip155:84532",
+        asset: selectedAssetForNetwork(lender, request.network ?? lender.networks[0] ?? this.options.network ?? "eip155:84532"),
+        network: request.network ?? lender.networks[0] ?? this.options.network ?? "eip155:84532",
         amountAtomic: offer.approvedAmountAtomic,
         feeAtomic: match.feeAtomic,
         durationSeconds: request.durationSeconds,

@@ -19,6 +19,7 @@ export interface LenderProfile {
   agent: string;
   availableLiquidityAtomic: string;
   asset: string;
+  assets?: Record<string, string>;
   networks: string[];
   minFeeBps: number;
   maxDurationSeconds: number;
@@ -94,6 +95,8 @@ export interface CreditRequest {
   requestId: string;
   productType: CreditProductType;
   agent: string;
+  network?: string;
+  asset?: string;
   amountAtomic: string;
   purpose: Purpose;
   supplier: string;
@@ -313,8 +316,9 @@ export function scoreLenderForRequest(input: {
   asset: string;
 }): number | undefined {
   if (input.lender.status !== "active") return undefined;
-  if (input.lender.asset !== input.asset) return undefined;
   if (!input.lender.networks.includes(input.network)) return undefined;
+  const lenderAsset = input.lender.assets?.[input.network] ?? input.lender.asset;
+  if (lenderAsset !== input.asset) return undefined;
   if (!input.lender.acceptedRiskBands.includes(input.decision.riskBand)) return undefined;
   if (input.request.durationSeconds > input.lender.maxDurationSeconds) return undefined;
 

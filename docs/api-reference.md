@@ -62,13 +62,17 @@ Content-Type: application/json
   "availableLiquidityAtomic": "25000000",
   "asset": "USDC",
   "networks": ["base-sepolia", "flare-testnet"],
+  "assets": {
+    "base-sepolia": "USDC",
+    "flare-testnet": "USDT0"
+  },
   "minFeeBps": 300,
   "maxDurationSeconds": 86400,
   "acceptedRiskBands": ["A", "B"]
 }
 ```
 
-Registration creates a lender session key and returns it once with a spend policy. `availableLiquidityAtomic` is the lender's declared c402 credit limit, not automatically the onchain session balance. c402 checks the generated session balance before returning a match; underfunded lender sessions are skipped and rematched.
+Registration creates one lender session key and returns it once with a spend policy. For multiple networks, c402 returns one Safe setup bundle per network. Use `safeAddresses` when the lender already has different Safe addresses per chain. `assets` is required when the networks use different tokens, such as USDC on Base Sepolia and testUSDT0 on Coston2. `availableLiquidityAtomic` is the declared limit per registered network; c402 checks the selected network's Safe balance before matching.
 
 ## Create Funded Job
 
@@ -123,6 +127,8 @@ Content-Type: application/json
 ```json
 {
   "agent": "0xAgent",
+  "network": "flare-testnet",
+  "asset": "USDT0",
   "productType": "asset-backed",
   "amountAtomic": "1000000",
   "purpose": "data",

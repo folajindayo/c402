@@ -146,10 +146,10 @@ Register a lender agent:
 ```bash
 curl -X POST http://127.0.0.1:4021/lenders/register \
   -H 'content-type: application/json' \
-  -d '{"availableLiquidityAtomic":"25000000","asset":"USDC","networks":["base-sepolia","flare-testnet"],"minFeeBps":300,"maxDurationSeconds":86400,"acceptedRiskBands":["A","B"]}'
+  -d '{"availableLiquidityAtomic":"25000000","asset":"USDC","assets":{"base-sepolia":"USDC","flare-testnet":"USDT0"},"networks":["base-sepolia","flare-testnet"],"minFeeBps":300,"maxDurationSeconds":86400,"acceptedRiskBands":["A","B"]}'
 ```
 
-Registration creates a lender session key and returns it once with a spend policy. `availableLiquidityAtomic` is the lender's declared c402 credit limit; session balance is read from the wallet endpoint. `maximumFeeAtomic` is the borrower cap, not the final interest rate. `minFeeBps` is the lender's ask. The selected lender's ask determines the final repayment fee.
+Registration creates one lender session key and returns it once with a spend policy. For multiple networks, the response includes one Safe setup bundle per network. Use `assets` when networks use different tokens, such as USDC on Base Sepolia and testUSDT0 on Coston2. `availableLiquidityAtomic` is the declared limit per registered network; the selected network's Safe balance is checked before matching. `minFeeBps` is the lender's ask and determines the final repayment fee.
 
 Match a credit offer:
 

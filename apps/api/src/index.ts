@@ -553,26 +553,32 @@ function optionalEnvInteger(name: string): number | undefined {
 
 async function registerLender(body: Record<string, unknown>): Promise<Record<string, unknown>> {
   const recoveryKey = createRecoveryKey();
-  const lenderNetwork = optionalStringArray(body, "networks")?.map(normalizeNetwork)[0] ?? activeCreditNetwork();
-  const sessionKey = createTestnetLenderSessionKey(lenderNetwork);
-  const safeAccount = createSafeAccountPlan({
-    safeAddress: typeof body.safeAddress === "string" ? body.safeAddress : undefined,
+  const lenderNetworks = optionalStringArray(body, "networks")?.map(normalizeNetwork) ?? [activeCreditNetwork()];
+  const sessionKey = createTestnetLenderSessionKey(lenderNetworks[0]);
+  const safeAddresses = body.safeAddresses && typeof body.safeAddresses === "object" && !Array.isArray(body.safeAddresses)
+    ? body.safeAddresses as Record<string, unknown>
+    : {};
+  const safeAccounts = lenderNetworks.map((network) => createSafeAccountPlan({
+    safeAddress: typeof safeAddresses[network] === "string" ? safeAddresses[network] as string : typeof body.safeAddress === "string" ? body.safeAddress : undefined,
     recoveryOwner: recoveryKey.address,
     sessionSigner: sessionKey.address,
-    asset: normalizeAsset(typeof body.asset === "string" ? body.asset : defaultCreditAsset()),
-    network: lenderNetwork,
+    asset: normalizeAsset(assetForNetworkInput(body, network)),
+    network,
     spendLimitAtomic: requiredString(body, "availableLiquidityAtomic"),
     maxDurationSeconds: optionalNumber(body, "maxDurationSeconds") ?? 86_400
-  });
+  }));
+  const safeAccount = safeAccounts[0];
+  const allReady = safeAccounts.every((account) => account.status === "ready");
   const lender = credit.registerLender(asLenderProfileInput({
     ...body,
-    asset: typeof body.asset === "string" ? body.asset : creditNetworkConfig(lenderNetwork).defaultAsset,
-    networks: [lenderNetwork],
+    asset: typeof body.asset === "string" ? body.asset : creditNetworkConfig(lenderNetworks[0]).defaultAsset,
+    assets: parseNetworkAssets(body),
+    networks: lenderNetworks,
     agent: safeAccount.address ?? sessionKey.address,
-    status: safeAccount.status === "ready" ? "active" : "paused"
+    status: allReady ? "active" : "paused"
   }));
   return {
-    registrationStatus: safeAccount.status === "ready" ? "active" : "setup_required",
+    registrationStatus: allReady ? "active" : "setup_required",
     lender,
     recoveryKey,
     sessionKey: {
@@ -585,6 +591,7 @@ async function registerLender(body: Record<string, unknown>): Promise<Record<str
       deprecated: "Use sessionKey. wallet is kept only for older clients."
     },
     safeAccount,
+    safeAccounts,
     warning: "The recovery and session private keys are returned once and are not stored by c402. Use a Safe with the c402 module for onchain-enforced session limits."
   };
 }
@@ -789,6 +796,7 @@ function lenderSessionPolicy(lender: ReturnType<AgentCreditService["registerLend
     holder: lender.agent,
     networks: lender.networks,
     asset: lender.asset,
+    assets: lender.assets,
     maxAvailableLiquidityAtomic: lender.availableLiquidityAtomic,
     maxFeeBps: lender.minFeeBps,
     maxDurationSeconds: lender.maxDurationSeconds,
@@ -871,8 +879,8 @@ async function dispatchCreditWithFundingCheck(): Promise<Record<string, unknown>
 }
 
 async function lenderHasEnoughBalance(address: string, requiredAtomic: string): Promise<{ status: "available"; ok: boolean; balanceAtomic: string } | { status: "unavailable" }> {
-  const asset = assetForLender(address);
   const network = networkForLender(address);
+  const asset = assetForLender(address, network);
   const balanceAtomic = asset === NATIVE_ASSET ? await nativeBalance(address, network) : await erc20Balance(asset, address, network);
   if (balanceAtomic === undefined) return { status: "unavailable" };
   return {
@@ -913,8 +921,9 @@ async function erc20Balance(token: string, holder: string, network = activeCredi
   }
 }
 
-function assetForLender(lenderAgent: string): string {
-  return credit.state().lenders.find((lender) => sameAddress(lender.agent, lenderAgent))?.asset ?? defaultCreditAsset();
+function assetForLender(lenderAgent: string, network = networkForLender(lenderAgent)): string {
+  const lender = credit.state().lenders.find((item) => sameAddress(item.agent, lenderAgent));
+  return lender?.assets?.[network] ?? lender?.asset ?? defaultCreditAsset();
 }
 
 function networkForLender(lenderAgent: string): string {
@@ -1105,6 +1114,8 @@ function asFundedJobInput(body: Record<string, unknown>): {
 
 function asCreditRequestInput(body: Record<string, unknown>): {
   agent: string;
+  network?: string;
+  asset?: string;
   productType?: CreditProductType;
   amountAtomic: string;
   purpose: Purpose;
@@ -1125,6 +1136,8 @@ function asCreditRequestInput(body: Record<string, unknown>): {
   const durationSeconds = body.durationSeconds;
   return {
     agent: requiredString(body, "agent"),
+    network: typeof body.network === "string" ? normalizeNetwork(body.network) : undefined,
+    asset: typeof body.asset === "string" ? normalizeAsset(body.asset) : undefined,
     productType,
     amountAtomic: requiredString(body, "amountAtomic"),
     purpose: purpose as Purpose,
@@ -1165,6 +1178,7 @@ function asLenderProfileInput(body: Record<string, unknown>) {
     agent: requiredString(body, "agent"),
     availableLiquidityAtomic: requiredString(body, "availableLiquidityAtomic"),
     asset: typeof body.asset === "string" ? normalizeAsset(body.asset) : defaultCreditAsset(),
+    assets: body.assets && typeof body.assets === "object" && !Array.isArray(body.assets) ? body.assets as Record<string, string> : undefined,
     networks: optionalStringArray(body, "networks")?.map(normalizeNetwork),
     minFeeBps: optionalNumber(body, "minFeeBps"),
     maxDurationSeconds: optionalNumber(body, "maxDurationSeconds"),
@@ -1172,6 +1186,23 @@ function asLenderProfileInput(body: Record<string, unknown>) {
     reputationScore: initialLenderReputation(body),
     status: body.status === "paused" ? "paused" as const : "active" as const
   };
+}
+
+function parseNetworkAssets(body: Record<string, unknown>): Record<string, string> | undefined {
+  const value = body.assets;
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new C402Error("invalid_json_body", "assets must be an object keyed by network", 400);
+  }
+  return Object.fromEntries(Object.entries(value).map(([network, asset]) => {
+    if (typeof asset !== "string") throw new C402Error("invalid_asset", `assets.${network} must be a string`, 400);
+    return [normalizeNetwork(network), normalizeAsset(asset)];
+  }));
+}
+
+function assetForNetworkInput(body: Record<string, unknown>, network: string): string {
+  const assets = parseNetworkAssets(body);
+  return assets?.[network] ?? (typeof body.asset === "string" ? body.asset : creditNetworkConfig(network).defaultAsset);
 }
 
 function initialLenderReputation(body: Record<string, unknown>): number {
