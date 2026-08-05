@@ -72,6 +72,7 @@ export interface LenderFundingAction {
   supplierDomain: string;
   purpose: Purpose;
   asset: string;
+  network: string;
   amountAtomic: string;
   feeAtomic: string;
   durationSeconds: number;
@@ -435,6 +436,7 @@ export class AgentCreditService {
         supplierDomain: request.supplierDomain,
         purpose: request.purpose,
         asset: lender.asset,
+        network: lender.networks[0] ?? this.options.network ?? "eip155:84532",
         amountAtomic: offer.approvedAmountAtomic,
         feeAtomic: match.feeAtomic,
         durationSeconds: request.durationSeconds,

@@ -14,7 +14,47 @@ import {
 import { renderDocs, renderLanding, renderLlmsTxt } from "./site.js";
 
 const BASE_SEPOLIA_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+const COSTON2_TEST_USDT0 = "0x21709E63fC7F264F329e0826Ea82197694B82775";
 const NATIVE_ASSET = "native";
+const BASE_SEPOLIA_NETWORK = "eip155:84532";
+const COSTON2_NETWORK = "eip155:114";
+
+type CreditNetworkConfig = {
+  chainId: number;
+  network: string;
+  name: string;
+  rpcUrl: string;
+  defaultAsset: string;
+  creditContractEnv: string;
+  moduleEnv: string;
+  proxyFactory: string;
+  singleton: string;
+};
+
+const CREDIT_NETWORK_CONFIG: Record<string, CreditNetworkConfig> = {
+  [BASE_SEPOLIA_NETWORK]: {
+    chainId: 84532,
+    network: BASE_SEPOLIA_NETWORK,
+    name: "Base Sepolia",
+    rpcUrl: "https://sepolia.base.org",
+    defaultAsset: BASE_SEPOLIA_USDC,
+    creditContractEnv: "C402_BASE_SEPOLIA_CREDIT_CONTRACT",
+    moduleEnv: "C402_BASE_SEPOLIA_SAFE_SESSION_MODULE_CONTRACT",
+    proxyFactory: "0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67",
+    singleton: "0xfb1bffC9d739B8D520DaF37dF666da4C687191EA"
+  },
+  [COSTON2_NETWORK]: {
+    chainId: 114,
+    network: COSTON2_NETWORK,
+    name: "Flare Coston2",
+    rpcUrl: "https://coston2-api.flare.network/ext/C/rpc",
+    defaultAsset: COSTON2_TEST_USDT0,
+    creditContractEnv: "C402_COSTON2_CREDIT_CONTRACT",
+    moduleEnv: "C402_COSTON2_SAFE_SESSION_MODULE_CONTRACT",
+    proxyFactory: "0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2",
+    singleton: "0x3E5c63644E683549055b9Be8653de26E0B4CD36E"
+  }
+};
 const computeEnabled = env("C402_ENABLE_COMPUTE") === "true";
 const service = computeEnabled ? createConfidentialPaymentService() : undefined;
 const lenderActionTtlSeconds = optionalEnvInteger("C402_LENDER_ACTION_TTL_SECONDS");
@@ -357,10 +397,10 @@ function supportedNetworks(baseUrl: string): Array<Record<string, unknown>> {
       chainId: 114,
       network: "eip155:114",
       name: "Flare Coston2",
-      role: "confidential-compute-testnet",
+      role: "credit-and-confidential-compute-testnet",
       rpcUrl: "https://coston2-api.flare.network/ext/C/rpc",
-      creditContract: env("C402_COSTON2_CREDIT_CONTRACT") ?? "0x170864d2086D3ee15B43dD1092347D6FA73E0702",
-      creditContractStatus: "legacy-testnet",
+      creditContract: creditContractForNetwork(COSTON2_NETWORK),
+      creditContractStatus: creditContractForNetwork(COSTON2_NETWORK) ? "deployed" : "deployment_required",
       x402: {
         status: flareX402FacilitatorConfigured(process.env) ? "active" : "facilitator_key_required",
         network: flareX402Network(process.env),
@@ -381,9 +421,7 @@ function supportedNetworks(baseUrl: string): Array<Record<string, unknown>> {
 }
 
 function baseSepoliaCreditContract(): string {
-  const explicit = env("C402_BASE_SEPOLIA_CREDIT_CONTRACT");
-  if (explicit) return explicit;
-  return env("C402_CREDIT_NETWORK") === "eip155:84532" ? env("C402_CREDIT_CONTRACT") ?? "" : "";
+  return creditContractForNetwork(BASE_SEPOLIA_NETWORK);
 }
 
 function openApi(baseUrl: string): Record<string, unknown> {
@@ -464,16 +502,39 @@ function env(name: string): string | undefined {
 }
 
 function defaultCreditAsset(): string {
-  return normalizeAsset(env("C402_ASSET") ?? BASE_SEPOLIA_USDC);
+  return normalizeAsset(env("C402_ASSET") ?? creditNetworkConfig(activeCreditNetwork()).defaultAsset);
 }
 
 function normalizeAsset(asset: string): string {
   const value = asset.trim();
   const lower = value.toLowerCase();
   if (lower === "usdc" || lower === "base-sepolia-usdc") return BASE_SEPOLIA_USDC;
+  if (lower === "usdt0" || lower === "flare-usdt0" || lower === "coston2-usdt0") return COSTON2_TEST_USDT0;
   if (lower === "eth" || lower === "native" || lower === "base-sepolia-eth") return NATIVE_ASSET;
   if (isAddress(value)) return value;
   throw new C402Error("invalid_asset", `unsupported asset ${asset}`, 400);
+}
+
+function activeCreditNetwork(): string {
+  return normalizeNetworkValue(env("C402_CREDIT_NETWORK") ?? BASE_SEPOLIA_NETWORK);
+}
+
+function normalizeNetworkValue(network: string): string {
+  const value = network.trim().toLowerCase();
+  if (value === "base-sepolia" || value === "base_sepolia") return BASE_SEPOLIA_NETWORK;
+  if (value === "flare-testnet" || value === "flare-coston2" || value === "coston2") return COSTON2_NETWORK;
+  return value;
+}
+
+function creditNetworkConfig(network: string): CreditNetworkConfig {
+  const config = CREDIT_NETWORK_CONFIG[normalizeNetworkValue(network)];
+  if (!config) throw new C402Error("unsupported_network", `unsupported credit network ${network}`, 400);
+  return config;
+}
+
+function creditContractForNetwork(network: string): string {
+  const config = creditNetworkConfig(network);
+  return env(config.creditContractEnv) ?? (config.network === activeCreditNetwork() ? env("C402_CREDIT_CONTRACT") ?? "" : "");
 }
 
 function tokenForAsset(asset: string): string {
@@ -492,17 +553,21 @@ function optionalEnvInteger(name: string): number | undefined {
 
 async function registerLender(body: Record<string, unknown>): Promise<Record<string, unknown>> {
   const recoveryKey = createRecoveryKey();
-  const sessionKey = createTestnetLenderSessionKey();
+  const lenderNetwork = optionalStringArray(body, "networks")?.map(normalizeNetwork)[0] ?? activeCreditNetwork();
+  const sessionKey = createTestnetLenderSessionKey(lenderNetwork);
   const safeAccount = createSafeAccountPlan({
     safeAddress: typeof body.safeAddress === "string" ? body.safeAddress : undefined,
     recoveryOwner: recoveryKey.address,
     sessionSigner: sessionKey.address,
     asset: normalizeAsset(typeof body.asset === "string" ? body.asset : defaultCreditAsset()),
+    network: lenderNetwork,
     spendLimitAtomic: requiredString(body, "availableLiquidityAtomic"),
     maxDurationSeconds: optionalNumber(body, "maxDurationSeconds") ?? 86_400
   });
   const lender = credit.registerLender(asLenderProfileInput({
     ...body,
+    asset: typeof body.asset === "string" ? body.asset : creditNetworkConfig(lenderNetwork).defaultAsset,
+    networks: [lenderNetwork],
     agent: safeAccount.address ?? sessionKey.address,
     status: safeAccount.status === "ready" ? "active" : "paused"
   }));
@@ -535,14 +600,14 @@ function createRecoveryKey(): { address: string; privateKey: Hex; keyType: strin
   };
 }
 
-function createTestnetLenderSessionKey(): { address: string; privateKey: Hex; custody: string; network: string; fundWith: string; keyType: string } {
+function createTestnetLenderSessionKey(network = activeCreditNetwork()): { address: string; privateKey: Hex; custody: string; network: string; fundWith: string; keyType: string } {
   const privateKey = generatePrivateKey();
   const account = privateKeyToAccount(privateKey);
   return {
     address: account.address,
     privateKey,
     custody: "session-key",
-    network: "eip155:84532",
+    network,
     fundWith: "Fund with only the amount this lender session is allowed to deploy.",
     keyType: "lender-session-key"
   };
@@ -553,13 +618,15 @@ function createSafeAccountPlan(input: {
   recoveryOwner: string;
   sessionSigner: string;
   asset: string;
+  network: string;
   spendLimitAtomic: string;
   maxDurationSeconds: number;
 }): Record<string, unknown> & { address?: string } {
-  const module = env("C402_SAFE_SESSION_MODULE_CONTRACT");
-  const creditContract = baseSepoliaCreditContract();
-  const safeProxyFactory = env("C402_SAFE_PROXY_FACTORY");
-  const safeSingleton = env("C402_SAFE_SINGLETON");
+  const network = creditNetworkConfig(input.network);
+  const module = env(network.moduleEnv) ?? (network.network === activeCreditNetwork() ? env("C402_SAFE_SESSION_MODULE_CONTRACT") : undefined);
+  const creditContract = creditContractForNetwork(network.network);
+  const safeProxyFactory = env(`${network.network === COSTON2_NETWORK ? "C402_COSTON2" : "C402_BASE_SEPOLIA"}_SAFE_PROXY_FACTORY`) ?? (network.network === activeCreditNetwork() ? env("C402_SAFE_PROXY_FACTORY") : undefined) ?? network.proxyFactory;
+  const safeSingleton = env(`${network.network === COSTON2_NETWORK ? "C402_COSTON2" : "C402_BASE_SEPOLIA"}_SAFE_SINGLETON`) ?? (network.network === activeCreditNetwork() ? env("C402_SAFE_SINGLETON") : undefined) ?? network.singleton;
   const expiresAt = Math.floor(Date.now() / 1000) + input.maxDurationSeconds;
   const safeSaltNonce = BigInt(Date.now());
   const moduleAbi = [{
@@ -613,6 +680,7 @@ function createSafeAccountPlan(input: {
   if (!module || !creditContract) {
     return {
       status: "module_not_configured",
+      network: network.network,
       module: module ?? "",
       creditContract,
       recoveryOwner: input.recoveryOwner,
@@ -630,6 +698,7 @@ function createSafeAccountPlan(input: {
     if (!safeProxyFactory || !safeSingleton) {
       return {
         status: "safe_factory_not_configured",
+        network: network.network,
         module,
         creditContract,
         safeProxyFactory: safeProxyFactory ?? "",
@@ -647,8 +716,8 @@ function createSafeAccountPlan(input: {
       args: [[input.recoveryOwner as Hex], 1n, "0x0000000000000000000000000000000000000000", "0x", "0x0000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000", 0n, "0x0000000000000000000000000000000000000000"]
     });
     setupTransactions.push({
-      chainId: 84532,
-      network: "base-sepolia",
+      chainId: network.chainId,
+      network: network.network,
       sponsor: "lender-agent",
       to: safeProxyFactory,
       value: "0",
@@ -666,8 +735,8 @@ function createSafeAccountPlan(input: {
   const safeAddress = input.safeAddress ?? "<safe-address-from-createProxyWithNonce>";
   setupTransactions.push(
     {
-      chainId: 84532,
-      network: "base-sepolia",
+      chainId: network.chainId,
+      network: network.network,
       sponsor: "safe-owner",
       executor: "safe-transaction",
       to: safeAddress,
@@ -681,8 +750,8 @@ function createSafeAccountPlan(input: {
       })
     },
     {
-      chainId: 84532,
-      network: "base-sepolia",
+      chainId: network.chainId,
+      network: network.network,
       sponsor: "safe-owner",
       executor: "safe-transaction",
       to: module,
@@ -699,6 +768,7 @@ function createSafeAccountPlan(input: {
 
   return {
     status: input.safeAddress ? "ready" : "safe_required",
+    network: network.network,
     address: input.safeAddress,
     module,
     creditContract,
@@ -725,7 +795,7 @@ function lenderSessionPolicy(lender: ReturnType<AgentCreditService["registerLend
     acceptedRiskBands: lender.acceptedRiskBands,
     allowedActions: [
       {
-        contract: baseSepoliaCreditContract(),
+        contract: typeof safeAccount.creditContract === "string" ? safeAccount.creditContract : "",
         functionName: lender.asset === NATIVE_ASSET ? "paySupplier" : "paySupplierToken",
         selectorScope: "c402-credit-intent-only"
       }
@@ -743,11 +813,12 @@ async function lenderWalletSummary(lenderAgent: string): Promise<Record<string, 
   const queue = credit.lenderFundingActions(lenderAgent);
   const state = credit.state();
   const address = queue.lender.agent;
-  const nativeBalanceAtomic = await nativeBalance(address);
+  const lenderNetwork = networkForLender(address);
+  const nativeBalanceAtomic = await nativeBalance(address, lenderNetwork);
   const advances = state.advances.filter((advance) => typeof advance.lender === "string" && sameAddress(advance.lender, address));
   return {
     address,
-    network: "eip155:84532",
+    network: lenderNetwork,
     nativeBalanceAtomic,
     nativeBalanceStatus: nativeBalanceAtomic === undefined ? "unavailable" : "available",
     lender: queue.lender,
@@ -801,7 +872,8 @@ async function dispatchCreditWithFundingCheck(): Promise<Record<string, unknown>
 
 async function lenderHasEnoughBalance(address: string, requiredAtomic: string): Promise<{ status: "available"; ok: boolean; balanceAtomic: string } | { status: "unavailable" }> {
   const asset = assetForLender(address);
-  const balanceAtomic = asset === NATIVE_ASSET ? await nativeBalance(address) : await erc20Balance(asset, address);
+  const network = networkForLender(address);
+  const balanceAtomic = asset === NATIVE_ASSET ? await nativeBalance(address, network) : await erc20Balance(asset, address, network);
   if (balanceAtomic === undefined) return { status: "unavailable" };
   return {
     status: "available",
@@ -810,20 +882,20 @@ async function lenderHasEnoughBalance(address: string, requiredAtomic: string): 
   };
 }
 
-async function nativeBalance(address: string): Promise<string | undefined> {
+async function nativeBalance(address: string, network = activeCreditNetwork()): Promise<string | undefined> {
   if (!isAddress(address)) return undefined;
   try {
-    const client = createPublicClient({ transport: http(env("C402_CREDIT_RPC_URL") ?? "https://sepolia.base.org") });
+    const client = createPublicClient({ transport: http(creditNetworkConfig(network).rpcUrl) });
     return (await client.getBalance({ address })).toString();
   } catch {
     return undefined;
   }
 }
 
-async function erc20Balance(token: string, holder: string): Promise<string | undefined> {
+async function erc20Balance(token: string, holder: string, network = activeCreditNetwork()): Promise<string | undefined> {
   if (!isAddress(token) || !isAddress(holder)) return undefined;
   try {
-    const client = createPublicClient({ transport: http(env("C402_CREDIT_RPC_URL") ?? "https://sepolia.base.org") });
+    const client = createPublicClient({ transport: http(creditNetworkConfig(network).rpcUrl) });
     return (await client.readContract({
       address: token as Hex,
       abi: [{
@@ -845,9 +917,14 @@ function assetForLender(lenderAgent: string): string {
   return credit.state().lenders.find((lender) => sameAddress(lender.agent, lenderAgent))?.asset ?? defaultCreditAsset();
 }
 
+function networkForLender(lenderAgent: string): string {
+  return credit.state().lenders.find((lender) => sameAddress(lender.agent, lenderAgent))?.networks[0] ?? activeCreditNetwork();
+}
+
 function withFundingTransaction(action: ReturnType<AgentCreditService["lenderFundingActions"]>["actions"][number]): Record<string, unknown> {
-  const contract = baseSepoliaCreditContract();
-  const module = env("C402_SAFE_SESSION_MODULE_CONTRACT");
+  const network = creditNetworkConfig(action.network);
+  const contract = creditContractForNetwork(network.network);
+  const module = env(network.moduleEnv) ?? (network.network === activeCreditNetwork() ? env("C402_SAFE_SESSION_MODULE_CONTRACT") : undefined);
   const jobIdBytes32 = idToBytes32(action.repaymentSource);
   const advanceIdBytes32 = idToBytes32(action.offerId);
   const isNative = action.asset === NATIVE_ASSET;
@@ -856,8 +933,8 @@ function withFundingTransaction(action: ReturnType<AgentCreditService["lenderFun
     return {
       ...action,
       transaction: {
-        chainId: 84532,
-        network: "eip155:84532",
+        chainId: network.chainId,
+        network: network.network,
         to: module,
         value: "0",
         functionName: isNative ? "executePaySupplier" : "executePaySupplierToken",
@@ -894,8 +971,8 @@ function withFundingTransaction(action: ReturnType<AgentCreditService["lenderFun
   return {
     ...action,
     transaction: contract ? {
-      chainId: 84532,
-      network: "eip155:84532",
+      chainId: network.chainId,
+      network: network.network,
       to: contract,
       value: action.amountAtomic,
       valueUnits: "native-token-wei",
