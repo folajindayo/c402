@@ -5,10 +5,16 @@
   "deployer": "0xD17fbeA515ecB5aA548aC26d0897B5bc1fcec984",
   "credit": {
     "network": "eip155:84532",
-    "contract": "0x65Aae7c6D3cA5B9dADB098024C8Bb9EE816448F0",
+    "contract": "0x1133b25124cc2a69d4118e9b3f2e20a3c9ef3548",
     "status": "deployed",
-    "deployTx": "0x297c61891cdb5659fa6916202b5dcf93870f58b61ba69b2ad4787aec9a5f8c79",
+    "deployTx": "0x05ac7689f37cf53743eac695117e13a522e10a2095b60ded81b5c2d6a30bbfa4",
     "owner": "0xD17fbeA515ecB5aA548aC26d0897B5bc1fcec984"
+  },
+  "safe": {
+    "sessionModule": "0x170864d2086d3ee15b43dd1092347d6fa73e0702",
+    "sessionModuleDeployTx": "0x4056cb9c20e570b8861f8ed39eb336b6434a469f99b67aa8e0ec1f744243cf4d",
+    "proxyFactory": "0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67",
+    "singleton": "0xfb1bffC9d739B8D520DaF37dF666da4C687191EA"
   },
   "erc8004": {
     "identityRegistry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
