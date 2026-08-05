@@ -29,9 +29,13 @@ const DOCS: Record<string, DocsPage> = {
         <a href="/docs/lenders"><strong>Lender agents</strong><span>How idle agent balances become purpose-bound credit offers.</span></a>
         <a href="/docs/security"><strong>Security model</strong><span>Liens, hard recovery value, direct supplier payment, and liquidation.</span></a>
       </div>
-      <h2>Core Invariant</h2>
-      <pre><code>principal + maximum borrower fee <= hard liquidatable recovery value</code></pre>
-      <p>Projected revenue can size a credit line, but it cannot replace collateral. Every approved loan needs something recoverable.</p>
+      <h2>How it works</h2>
+      <ol>
+        <li>A borrower shows how the loan will be repaid.</li>
+        <li>c402 matches the request with a lender agent.</li>
+        <li>The lender pays the supplier directly.</li>
+        <li>Revenue repays the lender first.</li>
+      </ol>
     `
   },
   "/docs/get-started": {
@@ -55,10 +59,10 @@ const DOCS: Record<string, DocsPage> = {
     "maxDurationSeconds":86400,
     "acceptedRiskBands":["A","B"]
   }'</code></pre>
-      <p>Registration returns one session key and one Safe setup bundle per network. Use <code>assets</code> when networks use different tokens. The liquidity limit is shared across networks; c402 checks the selected Safe balance before matching.</p>
+      <p>Registration returns a session key and one funding address per network. Fund the address, then submit the setup transactions returned for that network. The lender agent pays gas.</p>
       <h2>3. Fund and inspect the Safe</h2>
       <pre><code>curl https://c402.site/lenders/0xLenderAgent/wallet</code></pre>
-      <p>Fund each Safe with the network's gas token and lender asset. The lender agent signs setup transactions and pays gas.</p>
+      <p>Fund each address with the network gas token and lender asset. Then submit the setup transactions and poll for supplier-payment actions.</p>
       <h2>4. Create or register a repayment source</h2>
       <p>For a funded job, create a job receivable. For asset, subscription, or earnings credit, register a backing source with hard liquidation value.</p>
       <pre><code>curl -X POST https://c402.site/credit/backing-sources \\
@@ -155,8 +159,8 @@ Selected lender: B</code></pre>
         <li>Accepted risk bands</li>
       </ul>
       <p>c402 owns lender reputation. It can be initialized from ERC-8004 identity evidence and then updated from repayment, missed orders, defaults, and uptime.</p>
-      <h2>Session account security</h2>
-      <p>The no-API-key smart-wallet path uses Safe plus <code>C402SafeSessionModule</code>. Safe remains the lender treasury and recovery layer. The recovery owner owns the Safe. The session signer can only execute c402 supplier payments through the configured credit contract, up to its spend limit and before expiry. The Safe owner can revoke the module session.</p>
+      <h2>Agent flow</h2>
+      <p>Register, fund the returned address, submit setup, poll for orders, pay suppliers, and report the payment.</p>
       <h2>Funded lender wallet flow</h2>
       <ol>
         <li>Register with <code>POST /lenders/register</code>. c402 creates a lender session key and returns it once with a spend policy.</li>
@@ -308,7 +312,7 @@ COMPUTE-REQUIRED
 COMPUTE-PAYLOAD
 COMPUTE-RECEIPT</code></pre>
       <h2>c402 credit endpoints</h2>
-      <p>The credit endpoints are plain JSON APIs today. They model borrowing, lending, liens, repayment, and liquidation. They can be wrapped with x402 payment challenges later if paid API access is required.</p>
+      <p>Use these endpoints to borrow, lend, repay, and recover funds.</p>
       <h2>Networks</h2>
       <table>
         <thead><tr><th>Network</th><th>Chain ID</th><th>Asset</th><th>Transfer</th><th>Facilitator</th></tr></thead>

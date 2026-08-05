@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { C402Error, type CreditProductType, type Purpose } from "@c402/protocol";
 import { createFccAdapterFromEnv } from "@c402/fcc-adapter";
 import { AgentCreditService, ConfidentialPaymentService, createConfigFromEnv } from "@c402/server";
-import { createPublicClient, encodeFunctionData, http, isAddress, keccak256, toBytes, type Hex } from "viem";
+import { concatHex, createPublicClient, encodeFunctionData, encodePacked, getCreate2Address, http, isAddress, keccak256, toBytes, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import {
   flareX402Asset,
@@ -146,7 +146,13 @@ export default async function apiHandler(req: IncomingMessage, res: ServerRespon
       }));
     }
     if (req.method === "POST" && url.pathname === "/credit/request") {
-      return sendJson(res, 200, credit.requestCredit(asCreditRequestInput(await readJson(req))));
+      const result = credit.requestCredit(asCreditRequestInput(await readJson(req)));
+      return sendJson(res, 200, {
+        ...result,
+        next: result.offer
+          ? { action: "match", offerId: result.offer.offerId }
+          : { action: "rejected", reason: result.decision.reason }
+      });
     }
     if (req.method === "POST" && url.pathname === "/credit/match") {
       const body = await readJson(req);
@@ -558,7 +564,7 @@ async function registerLender(body: Record<string, unknown>): Promise<Record<str
   const safeAddresses = body.safeAddresses && typeof body.safeAddresses === "object" && !Array.isArray(body.safeAddresses)
     ? body.safeAddresses as Record<string, unknown>
     : {};
-  const safeAccounts = lenderNetworks.map((network) => createSafeAccountPlan({
+  const safeAccounts = await Promise.all(lenderNetworks.map((network) => createSafeAccountPlan({
     safeAddress: typeof safeAddresses[network] === "string" ? safeAddresses[network] as string : typeof body.safeAddress === "string" ? body.safeAddress : undefined,
     recoveryOwner: recoveryKey.address,
     sessionSigner: sessionKey.address,
@@ -566,7 +572,7 @@ async function registerLender(body: Record<string, unknown>): Promise<Record<str
     network,
     spendLimitAtomic: requiredString(body, "availableLiquidityAtomic"),
     maxDurationSeconds: optionalNumber(body, "maxDurationSeconds") ?? 86_400
-  }));
+  })));
   const safeAccount = safeAccounts[0];
   const allReady = safeAccounts.every((account) => account.status === "ready");
   const lender = credit.registerLender(asLenderProfileInput({
@@ -592,6 +598,16 @@ async function registerLender(body: Record<string, unknown>): Promise<Record<str
     },
     safeAccount,
     safeAccounts,
+    next: {
+      action: "fund_and_setup",
+      message: "Fund each returned address, then submit its setupTransactions.",
+      addresses: safeAccounts.map((account) => ({
+        network: account.network,
+        address: account.address,
+        asset: account.token,
+        status: account.status
+      }))
+    },
     warning: "Keys are returned once and are not stored. Submit each Safe setup bundle before funding it."
   };
 }
@@ -620,7 +636,7 @@ function createTestnetLenderSessionKey(network = activeCreditNetwork()): { addre
   };
 }
 
-function createSafeAccountPlan(input: {
+async function createSafeAccountPlan(input: {
   safeAddress?: string;
   recoveryOwner: string;
   sessionSigner: string;
@@ -628,7 +644,7 @@ function createSafeAccountPlan(input: {
   network: string;
   spendLimitAtomic: string;
   maxDurationSeconds: number;
-}): Record<string, unknown> & { address?: string } {
+}): Promise<Record<string, unknown> & { address?: string }> {
   const network = creditNetworkConfig(input.network);
   const module = env(network.moduleEnv) ?? (network.network === activeCreditNetwork() ? env("C402_SAFE_SESSION_MODULE_CONTRACT") : undefined);
   const creditContract = creditContractForNetwork(network.network);
@@ -666,6 +682,22 @@ function createSafeAccountPlan(input: {
       { name: "saltNonce", type: "uint256" }
     ],
     outputs: [{ name: "proxy", type: "address" }]
+  }, {
+    type: "function",
+    name: "calculateCreateProxyWithNonceAddress",
+    stateMutability: "view",
+    inputs: [
+      { name: "_singleton", type: "address" },
+      { name: "initializer", type: "bytes" },
+      { name: "saltNonce", type: "uint256" }
+    ],
+    outputs: [{ name: "proxy", type: "address" }]
+  }, {
+    type: "function",
+    name: "proxyCreationCode",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "bytes" }]
   }] as const;
   const safeSetupAbi = [{
     type: "function",
@@ -722,6 +754,23 @@ function createSafeAccountPlan(input: {
       functionName: "setup",
       args: [[input.recoveryOwner as Hex], 1n, "0x0000000000000000000000000000000000000000", "0x", "0x0000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000", 0n, "0x0000000000000000000000000000000000000000"]
     });
+    let predictedSafeAddress: string | undefined;
+    try {
+      const client = createPublicClient({ transport: http(network.rpcUrl) });
+      const proxyCreationCode = await client.readContract({
+        address: safeProxyFactory as Hex,
+        abi: safeFactoryAbi,
+        functionName: "proxyCreationCode"
+      });
+      const salt = keccak256(encodePacked(["bytes32", "uint256"], [keccak256(initializer), safeSaltNonce]));
+      predictedSafeAddress = getCreate2Address({
+        from: safeProxyFactory as Hex,
+        salt,
+        bytecodeHash: keccak256(concatHex([proxyCreationCode, safeSingleton as Hex]))
+      });
+    } catch {
+      predictedSafeAddress = undefined;
+    }
     setupTransactions.push({
       chainId: network.chainId,
       network: network.network,
@@ -737,6 +786,54 @@ function createSafeAccountPlan(input: {
       }),
       note: "The lender agent signs and pays gas for this direct deployment transaction. The deployed Safe owner is the recovery owner, not the session signer."
     });
+    const setupSafeAddress = predictedSafeAddress ?? "<safe-address-from-createProxyWithNonce>";
+    setupTransactions.push(
+      {
+        chainId: network.chainId,
+        network: network.network,
+        sponsor: "safe-owner",
+        executor: "safe-transaction",
+        to: setupSafeAddress,
+        value: "0",
+        functionName: "enableModule",
+        args: [module],
+        data: encodeFunctionData({
+          abi: safeAbi,
+          functionName: "enableModule",
+          args: [module as Hex]
+        })
+      },
+      {
+        chainId: network.chainId,
+        network: network.network,
+        sponsor: "safe-owner",
+        executor: "safe-transaction",
+        to: module,
+        value: "0",
+        functionName: "configureSession",
+        args: [input.sessionSigner, creditContract, tokenForAsset(input.asset), input.spendLimitAtomic, String(expiresAt)],
+        data: encodeFunctionData({
+          abi: moduleAbi,
+          functionName: "configureSession",
+          args: [input.sessionSigner as Hex, creditContract as Hex, tokenForAsset(input.asset) as Hex, BigInt(input.spendLimitAtomic), BigInt(expiresAt)]
+        })
+      }
+    );
+    return {
+      status: input.safeAddress ? "ready" : "safe_required",
+      network: network.network,
+      address: input.safeAddress ?? predictedSafeAddress,
+      module,
+      creditContract,
+      recoveryOwner: input.recoveryOwner,
+      sessionSigner: input.sessionSigner,
+      spendLimitAtomic: input.spendLimitAtomic,
+      expiresAt,
+      setupTransactions,
+      note: input.safeAddress
+        ? `Submit the setup transactions on ${network.name}. The session signer can then call only c402 supplier payments.`
+        : `Fund the predicted Safe address, then submit the setup transactions on ${network.name}. The lender agent pays deployment gas.`
+    };
   }
 
   const safeAddress = input.safeAddress ?? "<safe-address-from-createProxyWithNonce>";
