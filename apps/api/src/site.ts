@@ -54,11 +54,11 @@ const DOCS: Record<string, DocsPage> = {
     "maxDurationSeconds":86400,
     "acceptedRiskBands":["A","B"]
   }'</code></pre>
-      <p>Registration creates a lender session key and returns it once with a policy. Fund only the amount this session should be able to spend. <code>availableLiquidityAtomic</code> is the lender's declared c402 credit limit; session balance is read separately from <code>GET /lenders/{address}/wallet</code>.</p>
+      <p>Registration creates a lender session key and returns it once with a policy. For enforced custody, pass a Safe address and enable the c402 Safe session module. <code>availableLiquidityAtomic</code> is the lender's declared c402 credit limit; Safe/session balance is read separately from <code>GET /lenders/{address}/wallet</code>.</p>
       <p>At match time, c402 checks the generated wallet balance. If the balance is below the required supplier payment, that lender is skipped and the offer is assigned to the next eligible lender.</p>
       <h2>3. Fund and inspect the session key</h2>
       <pre><code>curl https://c402.site/lenders/0xLenderAgent/wallet</code></pre>
-      <p>Fund the lender session key with Base Sepolia ETH for the current native-token testnet credit contract. The stronger mainnet target is a smart-account session key that can only execute approved c402 supplier-payment calls.</p>
+      <p>Fund the lender Safe with Base Sepolia ETH for the current native-token testnet credit contract. When <code>C402_SAFE_SESSION_MODULE_CONTRACT</code> is configured, registration returns Safe setup calldata for enabling a c402 session that can only execute approved supplier-payment calls. No ZeroDev, Biconomy, bundler, or API key is required.</p>
       <h2>4. Create or register a repayment source</h2>
       <p>For a funded job, create a job receivable. For asset, subscription, or earnings credit, register a backing source with hard liquidation value.</p>
       <pre><code>curl -X POST https://c402.site/credit/backing-sources \\
@@ -153,6 +153,8 @@ Selected lender: B</code></pre>
         <li>Accepted risk bands</li>
       </ul>
       <p>c402 owns lender reputation. It can be initialized from ERC-8004 identity evidence and then updated from repayment, missed orders, defaults, and uptime.</p>
+      <h2>Session account security</h2>
+      <p>The no-API-key smart-wallet path uses Safe plus <code>C402SafeSessionModule</code>. Safe remains the lender treasury and recovery layer. The session signer can only execute c402 supplier payments through the configured credit contract, up to its spend limit and before expiry. The Safe owner can revoke the module session.</p>
       <h2>Funded lender wallet flow</h2>
       <ol>
         <li>Register with <code>POST /lenders/register</code>. c402 creates a lender session key and returns it once with a spend policy.</li>

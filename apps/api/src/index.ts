@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { C402Error, type CreditProductType, type Purpose } from "@c402/protocol";
 import { createFccAdapterFromEnv } from "@c402/fcc-adapter";
 import { AgentCreditService, ConfidentialPaymentService, createConfigFromEnv } from "@c402/server";
-import { createPublicClient, http, isAddress, keccak256, toBytes, type Hex } from "viem";
+import { createPublicClient, encodeFunctionData, http, isAddress, keccak256, toBytes, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import {
   flareX402Asset,
@@ -71,7 +71,7 @@ export default async function apiHandler(req: IncomingMessage, res: ServerRespon
       return sendJson(res, 200, { wallets: await lenderWalletSummaries() });
     }
     if (req.method === "POST" && url.pathname === "/lenders/register") {
-      return sendJson(res, 201, registerLender(await readJson(req)));
+      return sendJson(res, 201, await registerLender(await readJson(req)));
     }
     if (req.method === "GET" && url.pathname.startsWith("/lenders/") && url.pathname.endsWith("/actions")) {
       const lender = decodeURIComponent(url.pathname.slice("/lenders/".length, -"/actions".length));
@@ -471,24 +471,44 @@ function optionalEnvInteger(name: string): number | undefined {
   return parsed;
 }
 
-function registerLender(body: Record<string, unknown>): Record<string, unknown> {
+async function registerLender(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const recoveryKey = createRecoveryKey();
   const sessionKey = createTestnetLenderSessionKey();
+  const safeAccount = createSafeAccountPlan({
+    safeAddress: typeof body.safeAddress === "string" ? body.safeAddress : undefined,
+    sessionSigner: sessionKey.address,
+    spendLimitAtomic: requiredString(body, "availableLiquidityAtomic"),
+    maxDurationSeconds: optionalNumber(body, "maxDurationSeconds") ?? 86_400
+  });
   const lender = credit.registerLender(asLenderProfileInput({
     ...body,
-    agent: sessionKey.address
+    agent: safeAccount.address ?? sessionKey.address
   }));
   return {
     lender,
+    recoveryKey,
     sessionKey: {
       ...sessionKey,
-      policy: lenderSessionPolicy(lender)
+      policy: lenderSessionPolicy(lender, safeAccount)
     },
     wallet: {
       address: sessionKey.address,
       privateKey: sessionKey.privateKey,
       deprecated: "Use sessionKey. wallet is kept only for older clients."
     },
-    warning: "The session private key is returned once and is not stored by c402. Fund only the amount this lender session should be able to spend."
+    safeAccount,
+    warning: "The recovery and session private keys are returned once and are not stored by c402. Use a Safe with the c402 module for onchain-enforced session limits."
+  };
+}
+
+function createRecoveryKey(): { address: string; privateKey: Hex; keyType: string; custody: string } {
+  const privateKey = generatePrivateKey();
+  const account = privateKeyToAccount(privateKey);
+  return {
+    address: account.address,
+    privateKey,
+    keyType: "lender-recovery-owner",
+    custody: "client-controlled"
   };
 }
 
@@ -505,7 +525,88 @@ function createTestnetLenderSessionKey(): { address: string; privateKey: Hex; cu
   };
 }
 
-function lenderSessionPolicy(lender: ReturnType<AgentCreditService["registerLender"]>): Record<string, unknown> {
+function createSafeAccountPlan(input: {
+  safeAddress?: string;
+  sessionSigner: string;
+  spendLimitAtomic: string;
+  maxDurationSeconds: number;
+}): Record<string, unknown> & { address?: string } {
+  const module = env("C402_SAFE_SESSION_MODULE_CONTRACT");
+  const creditContract = baseSepoliaCreditContract();
+  const expiresAt = Math.floor(Date.now() / 1000) + input.maxDurationSeconds;
+  const moduleAbi = [{
+    type: "function",
+    name: "configureSession",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "sessionSigner", type: "address" },
+      { name: "creditContract", type: "address" },
+      { name: "spendLimit", type: "uint256" },
+      { name: "expiresAt", type: "uint256" }
+    ],
+    outputs: []
+  }] as const;
+  const safeAbi = [{
+    type: "function",
+    name: "enableModule",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "module", type: "address" }],
+    outputs: []
+  }] as const;
+
+  if (!module || !creditContract) {
+    return {
+      status: "module_not_configured",
+      module: module ?? "",
+      creditContract,
+      address: input.safeAddress,
+      sessionSigner: input.sessionSigner,
+      spendLimitAtomic: input.spendLimitAtomic,
+      expiresAt,
+      note: "Deploy C402SafeSessionModule and set C402_SAFE_SESSION_MODULE_CONTRACT to enable Safe-enforced lender sessions."
+    };
+  }
+
+  return {
+    status: input.safeAddress ? "ready" : "safe_required",
+    address: input.safeAddress,
+    module,
+    creditContract,
+    sessionSigner: input.sessionSigner,
+    spendLimitAtomic: input.spendLimitAtomic,
+    expiresAt,
+    setupTransactions: [{
+      chainId: 84532,
+      network: "base-sepolia",
+      to: input.safeAddress ?? "<safe-address>",
+      value: "0",
+      functionName: "enableModule",
+      args: [module],
+      data: encodeFunctionData({
+        abi: safeAbi,
+        functionName: "enableModule",
+        args: [module as Hex]
+      })
+    }, {
+      chainId: 84532,
+      network: "base-sepolia",
+      to: module,
+      value: "0",
+      functionName: "configureSession",
+      args: [input.sessionSigner, creditContract, input.spendLimitAtomic, String(expiresAt)],
+      data: encodeFunctionData({
+        abi: moduleAbi,
+        functionName: "configureSession",
+        args: [input.sessionSigner as Hex, creditContract as Hex, BigInt(input.spendLimitAtomic), BigInt(expiresAt)]
+      })
+    }],
+    note: input.safeAddress
+      ? "Execute setupTransactions from the Safe. The session signer can then only call c402 paySupplier through the Safe module."
+      : "Create a Safe first, then register again with safeAddress or execute this setup plan with the Safe address filled in."
+  };
+}
+
+function lenderSessionPolicy(lender: ReturnType<AgentCreditService["registerLender"]>, safeAccount: Record<string, unknown>): Record<string, unknown> {
   return {
     version: "c402-session-policy-v1",
     holder: lender.agent,
@@ -522,7 +623,8 @@ function lenderSessionPolicy(lender: ReturnType<AgentCreditService["registerLend
         selectorScope: "c402-credit-intent-only"
       }
     ],
-    mainnetTarget: "Replace this funded session wallet with a smart-account session key that can only call approved c402 paySupplier actions."
+    enforcement: safeAccount.status === "ready" ? "safe-module" : "safe-module-pending",
+    mainnetTarget: "Use a Safe owned by the lender and enable the c402 session module. No hosted bundler or provider API key is required."
   };
 }
 

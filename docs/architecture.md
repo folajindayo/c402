@@ -36,6 +36,8 @@ This limits loss if an agent fails or if an agent wallet is compromised, because
 - x402 adapter: verifies and settles payment payloads through an x402 facilitator.
 - ERC-8004 writer contract: records credit feedback hashes for agent reputation.
 - Credit intent contract: binds borrower, lender, supplier, receivable, fee, expiry, and supplier payment proof.
+- Safe session module: no-API-key smart-wallet path where lender funds stay in Safe and the session signer can only execute approved c402 `paySupplier` calls within spend and expiry limits.
+- Persistence: the current hosted API uses in-memory credit state. For production without a database, c402 should move lender registration and active credit commitments onchain, or add a durable database/indexer.
 - FCC adapter: talks to a Coston2 FCC proxy when confidential compute is enabled.
 
 ## FCC Boundary
