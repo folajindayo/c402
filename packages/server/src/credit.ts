@@ -235,8 +235,6 @@ export class AgentCreditService {
     networks?: string[];
     minFeeBps?: number;
     maxDurationSeconds?: number;
-    allowedPurposes?: Purpose[];
-    allowedSupplierDomains?: string[];
     acceptedRiskBands?: Array<UnderwritingDecision["riskBand"]>;
     reputationScore?: number;
     status?: LenderProfile["status"];
@@ -250,8 +248,6 @@ export class AgentCreditService {
       networks: input.networks?.length ? input.networks : [this.options.network ?? "eip155:84532"],
       minFeeBps: input.minFeeBps ?? 300,
       maxDurationSeconds: input.maxDurationSeconds ?? 86_400,
-      allowedPurposes: input.allowedPurposes?.length ? input.allowedPurposes : this.policy.allowedUses,
-      allowedSupplierDomains: input.allowedSupplierDomains?.length ? input.allowedSupplierDomains : this.policy.allowedDomains,
       acceptedRiskBands: input.acceptedRiskBands?.length ? input.acceptedRiskBands : ["A", "B"],
       reputationScore: input.reputationScore ?? 50,
       status: input.status ?? "active",

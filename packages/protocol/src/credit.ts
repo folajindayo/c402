@@ -22,8 +22,6 @@ export interface LenderProfile {
   networks: string[];
   minFeeBps: number;
   maxDurationSeconds: number;
-  allowedPurposes: Purpose[];
-  allowedSupplierDomains: string[];
   acceptedRiskBands: Array<UnderwritingDecision["riskBand"]>;
   reputationScore: number;
   status: "active" | "paused";
@@ -317,8 +315,6 @@ export function scoreLenderForRequest(input: {
   if (input.lender.status !== "active") return undefined;
   if (input.lender.asset !== input.asset) return undefined;
   if (!input.lender.networks.includes(input.network)) return undefined;
-  if (!input.lender.allowedPurposes.includes(input.request.purpose)) return undefined;
-  if (!input.lender.allowedSupplierDomains.includes(input.request.supplierDomain)) return undefined;
   if (!input.lender.acceptedRiskBands.includes(input.decision.riskBand)) return undefined;
   if (input.request.durationSeconds > input.lender.maxDurationSeconds) return undefined;
 

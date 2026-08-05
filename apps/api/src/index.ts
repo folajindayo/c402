@@ -736,15 +736,27 @@ function asLenderProfileInput(body: Record<string, unknown>) {
     agent: requiredString(body, "agent"),
     availableLiquidityAtomic: requiredString(body, "availableLiquidityAtomic"),
     asset: typeof body.asset === "string" ? body.asset : undefined,
-    networks: optionalStringArray(body, "networks"),
+    networks: optionalStringArray(body, "networks")?.map(normalizeNetwork),
     minFeeBps: optionalNumber(body, "minFeeBps"),
     maxDurationSeconds: optionalNumber(body, "maxDurationSeconds"),
-    allowedPurposes: optionalPurposes(body, "allowedPurposes"),
-    allowedSupplierDomains: optionalStringArray(body, "allowedSupplierDomains"),
     acceptedRiskBands: optionalRiskBands(body, "acceptedRiskBands"),
-    reputationScore: optionalNumber(body, "reputationScore"),
+    reputationScore: initialLenderReputation(body),
     status: body.status === "paused" ? "paused" as const : "active" as const
   };
+}
+
+function initialLenderReputation(body: Record<string, unknown>): number {
+  const agentRef = body.agentRef;
+  if (agentRef && typeof agentRef === "object") return 60;
+  return 50;
+}
+
+function normalizeNetwork(network: string): string {
+  const value = network.trim().toLowerCase();
+  if (value === "base-sepolia" || value === "base_sepolia") return "eip155:84532";
+  if (value === "flare-testnet" || value === "flare-coston2" || value === "coston2") return "eip155:114";
+  if (/^eip155:\d+$/.test(value)) return value;
+  throw new C402Error("invalid_network", `unsupported network ${network}`, 400);
 }
 
 function optionalStringArray(body: Record<string, unknown>, field: string): string[] | undefined {

@@ -49,15 +49,12 @@ const DOCS: Record<string, DocsPage> = {
   -d '{
     "availableLiquidityAtomic":"25000000",
     "asset":"USDC",
-    "networks":["eip155:84532"],
+    "networks":["base-sepolia","flare-testnet"],
     "minFeeBps":300,
     "maxDurationSeconds":86400,
-    "allowedPurposes":["data","compute"],
-    "allowedSupplierDomains":["data.example.com"],
-    "acceptedRiskBands":["A","B"],
-    "reputationScore":75
+    "acceptedRiskBands":["A","B"]
   }'</code></pre>
-      <p>Registration creates the lender wallet and returns its private key once. Fund that generated address before the lender agent signs supplier-payment actions.</p>
+      <p>Registration creates the lender wallet and returns its private key once. Fund that generated address before the lender agent signs supplier-payment actions. <code>availableLiquidityAtomic</code> is the lender's declared c402 credit limit; wallet balance is read separately from <code>GET /lenders/{address}/wallet</code>.</p>
       <h2>3. Fund and inspect the lender wallet</h2>
       <pre><code>curl https://c402.site/lenders/0xLenderAgent/wallet</code></pre>
       <p>Fund the lender agent wallet with Base Sepolia ETH for the current native-token testnet credit contract.</p>
@@ -149,14 +146,12 @@ Selected lender: B</code></pre>
       <h2>Lender policy fields</h2>
       <ul>
         <li>Available liquidity</li>
-        <li>Asset and supported networks</li>
+        <li>Asset and supported networks, using slugs such as <code>base-sepolia</code> and <code>flare-testnet</code></li>
         <li>Minimum fee in basis points</li>
         <li>Maximum duration</li>
-        <li>Allowed purposes</li>
-        <li>Allowed supplier domains</li>
         <li>Accepted risk bands</li>
-        <li>Reputation score</li>
       </ul>
+      <p>c402 owns lender reputation. It can be initialized from ERC-8004 identity evidence and then updated from repayment, missed orders, defaults, and uptime.</p>
       <h2>Funded lender wallet flow</h2>
       <ol>
         <li>Register with <code>POST /lenders/register</code>. c402 creates the lender wallet and returns the private key once.</li>

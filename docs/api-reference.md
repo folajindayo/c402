@@ -59,18 +59,16 @@ Content-Type: application/json
 
 ```json
 {
-  "agent": "0xLenderAgent",
   "availableLiquidityAtomic": "25000000",
   "asset": "USDC",
-  "networks": ["eip155:84532"],
+  "networks": ["base-sepolia", "flare-testnet"],
   "minFeeBps": 300,
   "maxDurationSeconds": 86400,
-  "allowedPurposes": ["data", "compute"],
-  "allowedSupplierDomains": ["data.example.com"],
-  "acceptedRiskBands": ["A", "B"],
-  "reputationScore": 75
+  "acceptedRiskBands": ["A", "B"]
 }
 ```
+
+Registration creates the lender wallet and returns the private key once. `availableLiquidityAtomic` is the lender's declared c402 credit limit, not automatically the onchain wallet balance.
 
 ## Create Funded Job
 

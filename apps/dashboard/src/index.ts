@@ -85,8 +85,8 @@ function render(apiBaseUrl: string): string {
   <section class="panel" style="margin-top: 16px;">
     <h2>A2A Lender Market</h2>
     <table>
-      <thead><tr><th>Lender Agent</th><th>Liquidity</th><th>Fee</th><th>Suppliers</th><th>Status</th></tr></thead>
-      <tbody id="lenders"><tr><td colspan="5">loading</td></tr></tbody>
+      <thead><tr><th>Lender Agent</th><th>Declared Limit</th><th>Fee</th><th>Networks</th><th>Reputation</th><th>Status</th></tr></thead>
+      <tbody id="lenders"><tr><td colspan="6">loading</td></tr></tbody>
     </table>
   </section>
   <section class="panel" style="margin-top: 16px;">
@@ -171,7 +171,7 @@ async function refresh() {
     return "<tr><td>" + job.jobId + "</td><td>" + job.status + "</td><td>" + money(job.escrowAmountAtomic) + " " + job.asset + "</td><td>" + (advance ? money(advance.amountAtomic) + " paid to " + advance.supplier : request ? "not advanced" : "") + "</td><td>" + (repayment ? money(repayment.principalAtomic) + " + " + money(repayment.feeAtomic) + " fee; agent " + money(repayment.agentProceedsAtomic) : "") + "</td></tr>";
   }).join("") || "<tr><td colspan='5'>No credit jobs yet</td></tr>";
   document.getElementById("backingSources").innerHTML = (credit.backingSources || []).map(row => "<tr><td>" + row.sourceId + "</td><td>" + row.productType + "</td><td>" + row.agent + "</td><td>" + money(row.valueAtomic) + " " + row.asset + "</td><td>" + money(row.liquidationValueAtomic) + "</td><td>" + money(row.lockedAtomic) + "</td><td>" + row.verifier + "</td></tr>").join("") || "<tr><td colspan='7'>No backing sources yet</td></tr>";
-  document.getElementById("lenders").innerHTML = (credit.lenders || []).map(row => "<tr><td>" + row.agent + "</td><td>" + money(row.availableLiquidityAtomic) + " " + row.asset + "</td><td>" + row.minFeeBps + " bps</td><td>" + row.allowedSupplierDomains.join(", ") + "</td><td>" + row.status + "</td></tr>").join("") || "<tr><td colspan='5'>No lender agents yet</td></tr>";
+  document.getElementById("lenders").innerHTML = (credit.lenders || []).map(row => "<tr><td>" + row.agent + "</td><td>" + money(row.availableLiquidityAtomic) + " " + row.asset + "</td><td>" + row.minFeeBps + " bps</td><td>" + row.networks.join(", ") + "</td><td>" + row.reputationScore + "</td><td>" + row.status + "</td></tr>").join("") || "<tr><td colspan='6'>No lender agents yet</td></tr>";
   document.getElementById("matches").innerHTML = (credit.matches || []).map(row => "<tr><td>" + row.matchId + "</td><td>" + row.lenderAgent + "</td><td>" + row.offerId + "</td><td>" + money(row.amountAtomic) + "</td><td>" + row.status + "</td><td>" + (row.actionExpiresAt || "") + "</td><td>" + row.score + "</td></tr>").join("") || "<tr><td colspan='7'>No matches yet</td></tr>";
   document.getElementById("liens").innerHTML = (credit.liens || []).map(row => "<tr><td>" + row.repaymentSource + "</td><td>" + row.productType + "</td><td>" + row.lender + "</td><td>" + money(row.seniorClaimAtomic) + "</td><td>" + money(row.collateralLockedAtomic) + "</td><td>" + row.status + "</td></tr>").join("") || "<tr><td colspan='6'>No liens yet</td></tr>";
   document.getElementById("liquidations").innerHTML = (credit.liquidations || []).map(row => "<tr><td>" + row.advanceId + "</td><td>" + row.lender + "</td><td>" + money(row.collateralPaidAtomic) + "</td><td>" + money(row.reservePaidAtomic) + "</td><td>" + money(row.shortfallAtomic) + "</td></tr>").join("") || "<tr><td colspan='5'>No liquidations yet</td></tr>";
@@ -196,7 +196,7 @@ function showError(error) {
   document.getElementById("requests").innerHTML = "<tr><td colspan='5'>" + message + "</td></tr>";
   document.getElementById("creditJobs").innerHTML = "<tr><td colspan='5'>" + message + "</td></tr>";
   document.getElementById("backingSources").innerHTML = "<tr><td colspan='7'>" + message + "</td></tr>";
-  document.getElementById("lenders").innerHTML = "<tr><td colspan='5'>" + message + "</td></tr>";
+  document.getElementById("lenders").innerHTML = "<tr><td colspan='6'>" + message + "</td></tr>";
   document.getElementById("matches").innerHTML = "<tr><td colspan='5'>" + message + "</td></tr>";
   document.getElementById("liens").innerHTML = "<tr><td colspan='5'>" + message + "</td></tr>";
   document.getElementById("liquidations").innerHTML = "<tr><td colspan='5'>" + message + "</td></tr>";
