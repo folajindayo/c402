@@ -1,0 +1,25 @@
+{
+  "network": "flare-coston2",
+  "chainId": 114,
+  "rpcUrl": "https://coston2-api.flare.network/ext/C/rpc",
+  "deployer": "0xD17fbeA515ecB5aA548aC26d0897B5bc1fcec984",
+  "credit": {
+    "network": "eip155:114",
+    "contract": "0x19f46cf6211dd576c242b1661fc0cb12158485ff",
+    "status": "deployed",
+    "deployTx": "0xb971631f0052f4c2e23ff29d2e21a16c3e744b72222ea616eb619d8463089c9a",
+    "owner": "0xD17fbeA515ecB5aA548aC26d0897B5bc1fcec984"
+  },
+  "safe": {
+    "sessionModule": "0x1bbeb84df6621898c7933f9e3e3ed9414e2637de",
+    "sessionModuleDeployTx": "0xac093176547ccc582bfb435db9e3d111ea3f5d18744036ae71c7e0a3c3eba76d",
+    "proxyFactory": "0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2",
+    "singleton": "0x3E5c63644E683549055b9Be8653de26E0B4CD36E"
+  },
+  "x402": {
+    "network": "eip155:114",
+    "asset": "0x21709E63fC7F264F329e0826Ea82197694B82775",
+    "assetSymbol": "testUSDT0",
+    "assetDecimals": 6
+  }
+}
