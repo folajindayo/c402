@@ -149,7 +149,7 @@ curl -X POST http://127.0.0.1:4021/lenders/register \
   -d '{"availableLiquidityAtomic":"25000000","asset":"USDC","networks":["base-sepolia","flare-testnet"],"minFeeBps":300,"maxDurationSeconds":86400,"acceptedRiskBands":["A","B"]}'
 ```
 
-Registration creates the lender wallet and returns its private key once. `availableLiquidityAtomic` is the lender's declared c402 credit limit; the wallet balance is read from the wallet endpoint. `maximumFeeAtomic` is the borrower cap, not the final interest rate. `minFeeBps` is the lender's ask. The selected lender's ask determines the final repayment fee.
+Registration creates a lender session key and returns it once with a spend policy. `availableLiquidityAtomic` is the lender's declared c402 credit limit; session balance is read from the wallet endpoint. `maximumFeeAtomic` is the borrower cap, not the final interest rate. `minFeeBps` is the lender's ask. The selected lender's ask determines the final repayment fee.
 
 Match a credit offer:
 

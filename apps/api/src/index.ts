@@ -253,7 +253,7 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
         method: "POST",
         path: "/lenders/register",
         price: "free",
-        purpose: "Register a lender and create its c402-managed testnet lender wallet. The private key is returned once."
+        purpose: "Register a lender and create a c402 lender session key. The key is returned once with a spend policy."
       },
       {
         method: "GET",
@@ -472,27 +472,57 @@ function optionalEnvInteger(name: string): number | undefined {
 }
 
 function registerLender(body: Record<string, unknown>): Record<string, unknown> {
-  const wallet = createTestnetLenderWallet();
+  const sessionKey = createTestnetLenderSessionKey();
   const lender = credit.registerLender(asLenderProfileInput({
     ...body,
-    agent: wallet.address
+    agent: sessionKey.address
   }));
   return {
     lender,
-    wallet,
-    warning: "The private key is returned once and is not stored by c402. Fund this lender agent wallet before it signs supplier-payment actions."
+    sessionKey: {
+      ...sessionKey,
+      policy: lenderSessionPolicy(lender)
+    },
+    wallet: {
+      address: sessionKey.address,
+      privateKey: sessionKey.privateKey,
+      deprecated: "Use sessionKey. wallet is kept only for older clients."
+    },
+    warning: "The session private key is returned once and is not stored by c402. Fund only the amount this lender session should be able to spend."
   };
 }
 
-function createTestnetLenderWallet(): { address: string; privateKey: Hex; custody: string; network: string; fundWith: string } {
+function createTestnetLenderSessionKey(): { address: string; privateKey: Hex; custody: string; network: string; fundWith: string; keyType: string } {
   const privateKey = generatePrivateKey();
   const account = privateKeyToAccount(privateKey);
   return {
     address: account.address,
     privateKey,
-    custody: "client-controlled",
+    custody: "session-key",
     network: "eip155:84532",
-    fundWith: "Base Sepolia ETH for the current native-token credit contract"
+    fundWith: "Fund with only the amount this lender session is allowed to deploy.",
+    keyType: "lender-session-key"
+  };
+}
+
+function lenderSessionPolicy(lender: ReturnType<AgentCreditService["registerLender"]>): Record<string, unknown> {
+  return {
+    version: "c402-session-policy-v1",
+    holder: lender.agent,
+    networks: lender.networks,
+    asset: lender.asset,
+    maxAvailableLiquidityAtomic: lender.availableLiquidityAtomic,
+    maxFeeBps: lender.minFeeBps,
+    maxDurationSeconds: lender.maxDurationSeconds,
+    acceptedRiskBands: lender.acceptedRiskBands,
+    allowedActions: [
+      {
+        contract: baseSepoliaCreditContract(),
+        functionName: "paySupplier",
+        selectorScope: "c402-credit-intent-only"
+      }
+    ],
+    mainnetTarget: "Replace this funded session wallet with a smart-account session key that can only call approved c402 paySupplier actions."
   };
 }
 

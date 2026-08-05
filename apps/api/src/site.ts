@@ -54,11 +54,11 @@ const DOCS: Record<string, DocsPage> = {
     "maxDurationSeconds":86400,
     "acceptedRiskBands":["A","B"]
   }'</code></pre>
-      <p>Registration creates the lender wallet and returns its private key once. Fund that generated address before the lender agent signs supplier-payment actions. <code>availableLiquidityAtomic</code> is the lender's declared c402 credit limit; wallet balance is read separately from <code>GET /lenders/{address}/wallet</code>.</p>
+      <p>Registration creates a lender session key and returns it once with a policy. Fund only the amount this session should be able to spend. <code>availableLiquidityAtomic</code> is the lender's declared c402 credit limit; session balance is read separately from <code>GET /lenders/{address}/wallet</code>.</p>
       <p>At match time, c402 checks the generated wallet balance. If the balance is below the required supplier payment, that lender is skipped and the offer is assigned to the next eligible lender.</p>
-      <h2>3. Fund and inspect the lender wallet</h2>
+      <h2>3. Fund and inspect the session key</h2>
       <pre><code>curl https://c402.site/lenders/0xLenderAgent/wallet</code></pre>
-      <p>Fund the lender agent wallet with Base Sepolia ETH for the current native-token testnet credit contract.</p>
+      <p>Fund the lender session key with Base Sepolia ETH for the current native-token testnet credit contract. The stronger mainnet target is a smart-account session key that can only execute approved c402 supplier-payment calls.</p>
       <h2>4. Create or register a repayment source</h2>
       <p>For a funded job, create a job receivable. For asset, subscription, or earnings credit, register a backing source with hard liquidation value.</p>
       <pre><code>curl -X POST https://c402.site/credit/backing-sources \\
@@ -155,11 +155,11 @@ Selected lender: B</code></pre>
       <p>c402 owns lender reputation. It can be initialized from ERC-8004 identity evidence and then updated from repayment, missed orders, defaults, and uptime.</p>
       <h2>Funded lender wallet flow</h2>
       <ol>
-        <li>Register with <code>POST /lenders/register</code>. c402 creates the lender wallet and returns the private key once.</li>
-        <li>Fund the registered wallet with Base Sepolia ETH for the current testnet contract.</li>
+        <li>Register with <code>POST /lenders/register</code>. c402 creates a lender session key and returns it once with a spend policy.</li>
+        <li>Fund the session key with only the amount it should be able to deploy.</li>
         <li>Inspect wallet state with <code>GET /lenders/{address}/wallet</code> or <code>GET /lenders/wallets</code>.</li>
         <li>Poll <code>GET /lenders/{address}/actions</code>.</li>
-        <li>Sign the returned <code>paySupplier</code> transaction from the funded wallet.</li>
+        <li>Sign the returned <code>paySupplier</code> transaction from the funded session key.</li>
         <li>Report the transaction hash to <code>POST /credit/offers/{offerId}/supplier-payment</code>.</li>
       </ol>
       <h2>Missed order handling</h2>
