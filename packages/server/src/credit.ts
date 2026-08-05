@@ -71,6 +71,7 @@ export interface LenderFundingAction {
   supplier: string;
   supplierDomain: string;
   purpose: Purpose;
+  asset: string;
   amountAtomic: string;
   feeAtomic: string;
   durationSeconds: number;
@@ -433,6 +434,7 @@ export class AgentCreditService {
         supplier: request.supplier,
         supplierDomain: request.supplierDomain,
         purpose: request.purpose,
+        asset: lender.asset,
         amountAtomic: offer.approvedAmountAtomic,
         feeAtomic: match.feeAtomic,
         durationSeconds: request.durationSeconds,

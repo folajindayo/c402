@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+interface IERC20 {
+    function transfer(address to, uint256 amount) external returns (bool);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+}
+
 /// @notice Safer c402 Credit primitive where lenders fund one approved supplier
 /// payment at a time. The contract never holds a pooled lender vault.
 contract C402CreditIntent {
@@ -22,6 +27,7 @@ contract C402CreditIntent {
         address buyer;
         address payable agent;
         uint256 escrowAmount;
+        address token;
         uint256 collateralAmount;
         uint256 lockedCollateral;
         address payable collateralPledger;
@@ -34,6 +40,7 @@ contract C402CreditIntent {
         bytes32 jobId;
         address payable lender;
         address payable supplier;
+        address token;
         uint256 amount;
         uint256 fee;
         uint256 reserve;
@@ -57,19 +64,24 @@ contract C402CreditIntent {
     mapping(bytes32 => Advance) public advances;
     mapping(bytes32 => address payable) public allowedSuppliers;
     mapping(address => uint256) public withdrawable;
+    mapping(address => mapping(address => uint256)) public withdrawableToken;
 
     uint256 private locked = 1;
 
     event OwnershipTransferred(address indexed previousOwner, address indexed nextOwner);
     event Paused(bool paused);
     event JobFunded(bytes32 indexed jobId, address indexed buyer, address indexed agent, uint256 escrowAmount, bytes32 agentRegistryHash, uint256 agentId);
+    event TokenJobFunded(bytes32 indexed jobId, address indexed token, address indexed buyer, address agent, uint256 escrowAmount, bytes32 agentRegistryHash, uint256 agentId);
     event CollateralPosted(bytes32 indexed jobId, address indexed pledgor, uint256 amount, uint256 totalCollateral);
+    event TokenCollateralPosted(bytes32 indexed jobId, address indexed token, address indexed pledgor, uint256 amount, uint256 totalCollateral);
     event SupplierSet(bytes32 indexed supplierDomainHash, address indexed supplier, bool allowed);
     event SupplierPaid(bytes32 indexed advanceId, bytes32 indexed jobId, address indexed lender, address supplier, uint256 amount, uint256 fee, uint256 collateralLocked, uint256 deadline);
+    event TokenSupplierPaid(bytes32 indexed advanceId, bytes32 indexed jobId, address indexed token, address lender, address supplier, uint256 amount, uint256 fee, uint256 collateralLocked, uint256 deadline);
     event JobSettled(bytes32 indexed jobId, bytes32 indexed advanceId, uint256 principal, uint256 fee, uint256 reserve, uint256 agentProceeds);
     event JobFailed(bytes32 indexed jobId, bytes32 indexed advanceId);
     event CollateralLiquidated(bytes32 indexed jobId, bytes32 indexed advanceId, address indexed lender, uint256 collateralPaid, uint256 reservePaid, uint256 shortfall);
     event Withdrawn(address indexed recipient, uint256 amount);
+    event TokenWithdrawn(address indexed token, address indexed recipient, uint256 amount);
 
     error NotOwner();
     error PausedError();
@@ -86,6 +98,7 @@ contract C402CreditIntent {
     error AdvanceNotMatured();
     error AdvanceNotLiquidatable();
     error TransferFailed();
+    error AssetMismatch();
 
     modifier onlyOwner() {
         _onlyOwner();
@@ -153,6 +166,7 @@ contract C402CreditIntent {
             buyer: msg.sender,
             agent: agent,
             escrowAmount: msg.value,
+            token: address(0),
             collateralAmount: 0,
             lockedCollateral: 0,
             collateralPledger: payable(address(0)),
@@ -163,15 +177,49 @@ contract C402CreditIntent {
         emit JobFunded(jobId, msg.sender, agent, msg.value, agentRegistryHash, agentId);
     }
 
+    function fundJobToken(bytes32 jobId, address token, uint256 amount, address payable agent, string calldata agentRegistry, uint256 agentId) external whenNotPaused {
+        if (token == address(0) || amount == 0) revert InvalidAmount();
+        if (jobs[jobId].status != JobStatus.None) revert JobExists();
+        _safeTransferFrom(token, msg.sender, address(this), amount);
+
+        bytes32 agentRegistryHash = keccak256(bytes(agentRegistry));
+        jobs[jobId] = Job({
+            buyer: msg.sender,
+            agent: agent,
+            escrowAmount: amount,
+            token: token,
+            collateralAmount: 0,
+            lockedCollateral: 0,
+            collateralPledger: payable(address(0)),
+            status: JobStatus.Funded,
+            agentRegistryHash: agentRegistryHash,
+            agentId: agentId
+        });
+        emit TokenJobFunded(jobId, token, msg.sender, agent, amount, agentRegistryHash, agentId);
+    }
+
     function postCollateral(bytes32 jobId) external payable whenNotPaused {
         Job storage job = jobs[jobId];
         if (job.status != JobStatus.Funded) revert JobNotFunded();
+        if (job.token != address(0)) revert AssetMismatch();
         if (msg.value == 0) revert InvalidAmount();
         if (job.collateralPledger == address(0)) {
             job.collateralPledger = payable(msg.sender);
         }
         job.collateralAmount += msg.value;
         emit CollateralPosted(jobId, msg.sender, msg.value, job.collateralAmount);
+    }
+
+    function postCollateralToken(bytes32 jobId, uint256 amount) external whenNotPaused {
+        Job storage job = jobs[jobId];
+        if (job.status != JobStatus.Funded) revert JobNotFunded();
+        if (job.token == address(0) || amount == 0) revert InvalidAmount();
+        _safeTransferFrom(job.token, msg.sender, address(this), amount);
+        if (job.collateralPledger == address(0)) {
+            job.collateralPledger = payable(msg.sender);
+        }
+        job.collateralAmount += amount;
+        emit TokenCollateralPosted(jobId, job.token, msg.sender, amount, job.collateralAmount);
     }
 
     function setSupplier(string calldata supplierDomain, address payable supplier, bool allowed) external onlyOwner {
@@ -186,6 +234,7 @@ contract C402CreditIntent {
     function paySupplier(bytes32 jobId, bytes32 advanceId, string calldata supplierDomain, string calldata purpose, uint256 durationSeconds) external payable whenNotPaused nonReentrant {
         Job storage job = jobs[jobId];
         if (job.status != JobStatus.Funded) revert JobNotFunded();
+        if (job.token != address(0)) revert AssetMismatch();
         if (advances[advanceId].status != AdvanceStatus.None) revert AdvanceExists();
         if (durationSeconds == 0) revert InvalidAmount();
 
@@ -224,11 +273,53 @@ contract C402CreditIntent {
         emit SupplierPaid(advanceId, jobId, msg.sender, supplier, msg.value, fee, collateralRequired, deadline);
     }
 
+    function paySupplierToken(bytes32 jobId, bytes32 advanceId, address token, string calldata supplierDomain, string calldata purpose, uint256 durationSeconds, uint256 amount) external whenNotPaused nonReentrant {
+        Job storage job = jobs[jobId];
+        if (job.status != JobStatus.Funded) revert JobNotFunded();
+        if (job.token != token || token == address(0)) revert AssetMismatch();
+        if (advances[advanceId].status != AdvanceStatus.None) revert AdvanceExists();
+        if (durationSeconds == 0 || amount == 0) revert InvalidAmount();
+        if (amount > maxAdvance) revert AdvanceTooLarge();
+
+        bytes32 supplierDomainHash = keccak256(bytes(supplierDomain));
+        address payable supplier = allowedSuppliers[supplierDomainHash];
+        if (supplier == address(0)) revert SupplierNotAllowed();
+
+        uint256 fee = (amount * feeBps) / 10_000;
+        uint256 requiredRevenue = amount + fee;
+        if (requiredRevenue >= job.escrowAmount) revert AdvanceTooLarge();
+
+        uint256 marginBps = ((job.escrowAmount - requiredRevenue) * 10_000) / job.escrowAmount;
+        if (marginBps < minGrossMarginBps) revert GrossMarginTooLow();
+        uint256 collateralRequired = (amount * minCollateralBps) / 10_000;
+        if (job.collateralAmount - job.lockedCollateral < collateralRequired) revert CollateralInsufficient();
+        job.lockedCollateral += collateralRequired;
+
+        uint256 deadline = block.timestamp + durationSeconds;
+        Advance storage advance = advances[advanceId];
+        advance.jobId = jobId;
+        advance.lender = payable(msg.sender);
+        advance.supplier = supplier;
+        advance.token = token;
+        advance.amount = amount;
+        advance.fee = fee;
+        advance.reserve = (fee * reserveBpsOfFee) / 10_000;
+        advance.collateralLocked = collateralRequired;
+        advance.deadline = deadline;
+        advance.status = AdvanceStatus.Advanced;
+        advance.purposeHash = keccak256(bytes(purpose));
+        advance.supplierDomainHash = supplierDomainHash;
+
+        _safeTransferFrom(token, msg.sender, supplier, amount);
+        emit TokenSupplierPaid(advanceId, jobId, token, msg.sender, supplier, amount, fee, collateralRequired, deadline);
+    }
+
     function completeJob(bytes32 jobId, bytes32 advanceId) external onlyOwner nonReentrant {
         Job storage job = jobs[jobId];
         Advance storage advance = advances[advanceId];
         if (job.status != JobStatus.Funded) revert JobNotFunded();
         if (advance.status != AdvanceStatus.Advanced || advance.jobId != jobId) revert AdvanceNotAdvanced();
+        if (job.token != advance.token) revert AssetMismatch();
 
         uint256 principal = advance.amount;
         uint256 fee = advance.fee;
@@ -239,10 +330,19 @@ contract C402CreditIntent {
         advance.status = AdvanceStatus.Repaid;
         job.lockedCollateral -= advance.collateralLocked;
         insuranceReserveBalance += reserve;
-        withdrawable[advance.lender] += principal + fee - reserve;
-        withdrawable[job.agent] += agentProceeds;
+        if (job.token == address(0)) {
+            withdrawable[advance.lender] += principal + fee - reserve;
+            withdrawable[job.agent] += agentProceeds;
+        } else {
+            withdrawableToken[job.token][advance.lender] += principal + fee - reserve;
+            withdrawableToken[job.token][job.agent] += agentProceeds;
+        }
         if (job.collateralAmount > 0 && job.lockedCollateral == 0 && job.collateralPledger != address(0)) {
-            withdrawable[job.collateralPledger] += job.collateralAmount;
+            if (job.token == address(0)) {
+                withdrawable[job.collateralPledger] += job.collateralAmount;
+            } else {
+                withdrawableToken[job.token][job.collateralPledger] += job.collateralAmount;
+            }
             job.collateralAmount = 0;
         }
 
@@ -279,7 +379,11 @@ contract C402CreditIntent {
             job.collateralAmount -= collateralPaid;
         }
         insuranceReserveBalance -= reservePaid;
-        withdrawable[advance.lender] += collateralPaid + reservePaid;
+        if (advance.token == address(0)) {
+            withdrawable[advance.lender] += collateralPaid + reservePaid;
+        } else {
+            withdrawableToken[advance.token][advance.lender] += collateralPaid + reservePaid;
+        }
         advance.status = AdvanceStatus.Defaulted;
         job.status = JobStatus.Failed;
 
@@ -293,5 +397,23 @@ contract C402CreditIntent {
         (bool ok, ) = payable(msg.sender).call{value: amount}("");
         if (!ok) revert TransferFailed();
         emit Withdrawn(msg.sender, amount);
+    }
+
+    function withdrawToken(address token) external nonReentrant {
+        uint256 amount = withdrawableToken[token][msg.sender];
+        if (amount == 0) revert InvalidAmount();
+        withdrawableToken[token][msg.sender] = 0;
+        _safeTransfer(token, msg.sender, amount);
+        emit TokenWithdrawn(token, msg.sender, amount);
+    }
+
+    function _safeTransfer(address token, address to, uint256 amount) internal {
+        (bool ok, bytes memory data) = token.call(abi.encodeWithSelector(IERC20.transfer.selector, to, amount));
+        if (!ok || (data.length != 0 && !abi.decode(data, (bool)))) revert TransferFailed();
+    }
+
+    function _safeTransferFrom(address token, address from, address to, uint256 amount) internal {
+        (bool ok, bytes memory data) = token.call(abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, amount));
+        if (!ok || (data.length != 0 && !abi.decode(data, (bool)))) revert TransferFailed();
     }
 }

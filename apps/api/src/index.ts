@@ -13,13 +13,15 @@ import {
 } from "./flare-facilitator.js";
 import { renderDocs, renderLanding, renderLlmsTxt } from "./site.js";
 
+const BASE_SEPOLIA_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+const NATIVE_ASSET = "native";
 const computeEnabled = env("C402_ENABLE_COMPUTE") === "true";
 const service = computeEnabled ? createConfidentialPaymentService() : undefined;
 const lenderActionTtlSeconds = optionalEnvInteger("C402_LENDER_ACTION_TTL_SECONDS");
 const credit = new AgentCreditService({
   endpoint: env("C402_CREDIT_ENDPOINT") ?? env("C402_PUBLIC_URL"),
   network: env("C402_NETWORK"),
-  asset: env("C402_ASSET"),
+  asset: defaultCreditAsset(),
   lenderActionTtlMs: lenderActionTtlSeconds ? lenderActionTtlSeconds * 1000 : undefined
 });
 if (service) await service.warmup();
@@ -461,6 +463,23 @@ function env(name: string): string | undefined {
   return value ? value : undefined;
 }
 
+function defaultCreditAsset(): string {
+  return normalizeAsset(env("C402_ASSET") ?? BASE_SEPOLIA_USDC);
+}
+
+function normalizeAsset(asset: string): string {
+  const value = asset.trim();
+  const lower = value.toLowerCase();
+  if (lower === "usdc" || lower === "base-sepolia-usdc") return BASE_SEPOLIA_USDC;
+  if (lower === "eth" || lower === "native" || lower === "base-sepolia-eth") return NATIVE_ASSET;
+  if (isAddress(value)) return value;
+  throw new C402Error("invalid_asset", `unsupported asset ${asset}`, 400);
+}
+
+function tokenForAsset(asset: string): string {
+  return asset === NATIVE_ASSET ? "0x0000000000000000000000000000000000000000" : asset;
+}
+
 function optionalEnvInteger(name: string): number | undefined {
   const value = env(name);
   if (!value) return undefined;
@@ -476,15 +495,19 @@ async function registerLender(body: Record<string, unknown>): Promise<Record<str
   const sessionKey = createTestnetLenderSessionKey();
   const safeAccount = createSafeAccountPlan({
     safeAddress: typeof body.safeAddress === "string" ? body.safeAddress : undefined,
+    recoveryOwner: recoveryKey.address,
     sessionSigner: sessionKey.address,
+    asset: normalizeAsset(typeof body.asset === "string" ? body.asset : defaultCreditAsset()),
     spendLimitAtomic: requiredString(body, "availableLiquidityAtomic"),
     maxDurationSeconds: optionalNumber(body, "maxDurationSeconds") ?? 86_400
   });
   const lender = credit.registerLender(asLenderProfileInput({
     ...body,
-    agent: safeAccount.address ?? sessionKey.address
+    agent: safeAccount.address ?? sessionKey.address,
+    status: safeAccount.status === "ready" ? "active" : "paused"
   }));
   return {
+    registrationStatus: safeAccount.status === "ready" ? "active" : "setup_required",
     lender,
     recoveryKey,
     sessionKey: {
@@ -527,13 +550,18 @@ function createTestnetLenderSessionKey(): { address: string; privateKey: Hex; cu
 
 function createSafeAccountPlan(input: {
   safeAddress?: string;
+  recoveryOwner: string;
   sessionSigner: string;
+  asset: string;
   spendLimitAtomic: string;
   maxDurationSeconds: number;
 }): Record<string, unknown> & { address?: string } {
   const module = env("C402_SAFE_SESSION_MODULE_CONTRACT");
   const creditContract = baseSepoliaCreditContract();
+  const safeProxyFactory = env("C402_SAFE_PROXY_FACTORY");
+  const safeSingleton = env("C402_SAFE_SINGLETON");
   const expiresAt = Math.floor(Date.now() / 1000) + input.maxDurationSeconds;
+  const safeSaltNonce = BigInt(Date.now());
   const moduleAbi = [{
     type: "function",
     name: "configureSession",
@@ -541,6 +569,7 @@ function createSafeAccountPlan(input: {
     inputs: [
       { name: "sessionSigner", type: "address" },
       { name: "creditContract", type: "address" },
+      { name: "token", type: "address" },
       { name: "spendLimit", type: "uint256" },
       { name: "expiresAt", type: "uint256" }
     ],
@@ -553,32 +582,95 @@ function createSafeAccountPlan(input: {
     inputs: [{ name: "module", type: "address" }],
     outputs: []
   }] as const;
+  const safeFactoryAbi = [{
+    type: "function",
+    name: "createProxyWithNonce",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "_singleton", type: "address" },
+      { name: "initializer", type: "bytes" },
+      { name: "saltNonce", type: "uint256" }
+    ],
+    outputs: [{ name: "proxy", type: "address" }]
+  }] as const;
+  const safeSetupAbi = [{
+    type: "function",
+    name: "setup",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "_owners", type: "address[]" },
+      { name: "_threshold", type: "uint256" },
+      { name: "to", type: "address" },
+      { name: "data", type: "bytes" },
+      { name: "fallbackHandler", type: "address" },
+      { name: "paymentToken", type: "address" },
+      { name: "payment", type: "uint256" },
+      { name: "paymentReceiver", type: "address" }
+    ],
+    outputs: []
+  }] as const;
 
   if (!module || !creditContract) {
     return {
       status: "module_not_configured",
       module: module ?? "",
       creditContract,
+      recoveryOwner: input.recoveryOwner,
       address: input.safeAddress,
       sessionSigner: input.sessionSigner,
+      token: tokenForAsset(input.asset),
       spendLimitAtomic: input.spendLimitAtomic,
       expiresAt,
       note: "Deploy C402SafeSessionModule and set C402_SAFE_SESSION_MODULE_CONTRACT to enable Safe-enforced lender sessions."
     };
   }
 
-  return {
-    status: input.safeAddress ? "ready" : "safe_required",
-    address: input.safeAddress,
-    module,
-    creditContract,
-    sessionSigner: input.sessionSigner,
-    spendLimitAtomic: input.spendLimitAtomic,
-    expiresAt,
-    setupTransactions: [{
+  const setupTransactions: Record<string, unknown>[] = [];
+  if (!input.safeAddress) {
+    if (!safeProxyFactory || !safeSingleton) {
+      return {
+        status: "safe_factory_not_configured",
+        module,
+        creditContract,
+        safeProxyFactory: safeProxyFactory ?? "",
+        safeSingleton: safeSingleton ?? "",
+        sessionSigner: input.sessionSigner,
+        token: tokenForAsset(input.asset),
+        spendLimitAtomic: input.spendLimitAtomic,
+        expiresAt,
+        note: "Set C402_SAFE_PROXY_FACTORY and C402_SAFE_SINGLETON so /lenders/register can return a Safe deployment transaction sponsored by the lender agent."
+      };
+    }
+    const initializer = encodeFunctionData({
+      abi: safeSetupAbi,
+      functionName: "setup",
+      args: [[input.recoveryOwner as Hex], 1n, "0x0000000000000000000000000000000000000000", "0x", "0x0000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000", 0n, "0x0000000000000000000000000000000000000000"]
+    });
+    setupTransactions.push({
       chainId: 84532,
       network: "base-sepolia",
-      to: input.safeAddress ?? "<safe-address>",
+      sponsor: "lender-agent",
+      to: safeProxyFactory,
+      value: "0",
+      functionName: "createProxyWithNonce",
+      args: [safeSingleton, initializer, String(safeSaltNonce)],
+      data: encodeFunctionData({
+        abi: safeFactoryAbi,
+        functionName: "createProxyWithNonce",
+        args: [safeSingleton as Hex, initializer, safeSaltNonce]
+      }),
+      note: "The lender agent signs and pays gas for this direct deployment transaction. The deployed Safe owner is the recovery owner, not the session signer."
+    });
+  }
+
+  const safeAddress = input.safeAddress ?? "<safe-address-from-createProxyWithNonce>";
+  setupTransactions.push(
+    {
+      chainId: 84532,
+      network: "base-sepolia",
+      sponsor: "safe-owner",
+      executor: "safe-transaction",
+      to: safeAddress,
       value: "0",
       functionName: "enableModule",
       args: [module],
@@ -587,22 +679,37 @@ function createSafeAccountPlan(input: {
         functionName: "enableModule",
         args: [module as Hex]
       })
-    }, {
+    },
+    {
       chainId: 84532,
       network: "base-sepolia",
+      sponsor: "safe-owner",
+      executor: "safe-transaction",
       to: module,
       value: "0",
       functionName: "configureSession",
-      args: [input.sessionSigner, creditContract, input.spendLimitAtomic, String(expiresAt)],
+      args: [input.sessionSigner, creditContract, tokenForAsset(input.asset), input.spendLimitAtomic, String(expiresAt)],
       data: encodeFunctionData({
         abi: moduleAbi,
         functionName: "configureSession",
-        args: [input.sessionSigner as Hex, creditContract as Hex, BigInt(input.spendLimitAtomic), BigInt(expiresAt)]
+        args: [input.sessionSigner as Hex, creditContract as Hex, tokenForAsset(input.asset) as Hex, BigInt(input.spendLimitAtomic), BigInt(expiresAt)]
       })
-    }],
+    }
+  );
+
+  return {
+    status: input.safeAddress ? "ready" : "safe_required",
+    address: input.safeAddress,
+    module,
+    creditContract,
+    recoveryOwner: input.recoveryOwner,
+    sessionSigner: input.sessionSigner,
+    spendLimitAtomic: input.spendLimitAtomic,
+    expiresAt,
+    setupTransactions,
     note: input.safeAddress
-      ? "Execute setupTransactions from the Safe. The session signer can then only call c402 paySupplier through the Safe module."
-      : "Create a Safe first, then register again with safeAddress or execute this setup plan with the Safe address filled in."
+      ? "Execute setupTransactions through the Safe. The session signer can then only call c402 paySupplier through the Safe module."
+      : "The lender agent sponsors Safe deployment, then the Safe owner executes the module enable/configuration transactions. Replace the placeholder Safe address with the factory-emitted proxy address."
   };
 }
 
@@ -619,7 +726,7 @@ function lenderSessionPolicy(lender: ReturnType<AgentCreditService["registerLend
     allowedActions: [
       {
         contract: baseSepoliaCreditContract(),
-        functionName: "paySupplier",
+        functionName: lender.asset === NATIVE_ASSET ? "paySupplier" : "paySupplierToken",
         selectorScope: "c402-credit-intent-only"
       }
     ],
@@ -693,7 +800,8 @@ async function dispatchCreditWithFundingCheck(): Promise<Record<string, unknown>
 }
 
 async function lenderHasEnoughBalance(address: string, requiredAtomic: string): Promise<{ status: "available"; ok: boolean; balanceAtomic: string } | { status: "unavailable" }> {
-  const balanceAtomic = await nativeBalance(address);
+  const asset = assetForLender(address);
+  const balanceAtomic = asset === NATIVE_ASSET ? await nativeBalance(address) : await erc20Balance(asset, address);
   if (balanceAtomic === undefined) return { status: "unavailable" };
   return {
     status: "available",
@@ -712,10 +820,77 @@ async function nativeBalance(address: string): Promise<string | undefined> {
   }
 }
 
+async function erc20Balance(token: string, holder: string): Promise<string | undefined> {
+  if (!isAddress(token) || !isAddress(holder)) return undefined;
+  try {
+    const client = createPublicClient({ transport: http(env("C402_CREDIT_RPC_URL") ?? "https://sepolia.base.org") });
+    return (await client.readContract({
+      address: token as Hex,
+      abi: [{
+        type: "function",
+        name: "balanceOf",
+        stateMutability: "view",
+        inputs: [{ name: "account", type: "address" }],
+        outputs: [{ name: "balance", type: "uint256" }]
+      }],
+      functionName: "balanceOf",
+      args: [holder as Hex]
+    })).toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function assetForLender(lenderAgent: string): string {
+  return credit.state().lenders.find((lender) => sameAddress(lender.agent, lenderAgent))?.asset ?? defaultCreditAsset();
+}
+
 function withFundingTransaction(action: ReturnType<AgentCreditService["lenderFundingActions"]>["actions"][number]): Record<string, unknown> {
   const contract = baseSepoliaCreditContract();
+  const module = env("C402_SAFE_SESSION_MODULE_CONTRACT");
   const jobIdBytes32 = idToBytes32(action.repaymentSource);
   const advanceIdBytes32 = idToBytes32(action.offerId);
+  const isNative = action.asset === NATIVE_ASSET;
+  const token = tokenForAsset(action.asset);
+  if (contract && module) {
+    return {
+      ...action,
+      transaction: {
+        chainId: 84532,
+        network: "eip155:84532",
+        to: module,
+        value: "0",
+        functionName: isNative ? "executePaySupplier" : "executePaySupplierToken",
+        args: [action.lender, jobIdBytes32, advanceIdBytes32, action.supplierDomain, action.purpose, action.durationSeconds, action.amountAtomic],
+        token,
+        valueUnits: isNative ? "native-token-wei" : "erc20-atomic-units",
+        abi: [{
+          type: "function",
+          name: isNative ? "executePaySupplier" : "executePaySupplierToken",
+          stateMutability: "nonpayable",
+          inputs: [
+            { name: "safe", type: "address" },
+            { name: "jobId", type: "bytes32" },
+            { name: "advanceId", type: "bytes32" },
+            { name: "supplierDomain", type: "string" },
+            { name: "purpose", type: "string" },
+            { name: "durationSeconds", type: "uint256" },
+            { name: "amount", type: "uint256" }
+          ],
+          outputs: []
+        }],
+        afterSubmit: supplierPaymentCallback(action)
+      },
+      transactionWarning: "The c402 Safe session module enforces the configured asset, spend limit, expiry, and paySupplier-only route."
+    };
+  }
+  if (!isNative) {
+    return {
+      ...action,
+      transaction: undefined,
+      transactionWarning: "USDC funding requires C402_SAFE_SESSION_MODULE_CONTRACT so the Safe module can approve and call paySupplierToken."
+    };
+  }
   return {
     ...action,
     transaction: contract ? {
@@ -743,18 +918,22 @@ function withFundingTransaction(action: ReturnType<AgentCreditService["lenderFun
         jobIdBytes32: `keccak256(utf8:${action.repaymentSource})`,
         advanceIdBytes32: `keccak256(utf8:${action.offerId})`
       },
-      afterSubmit: {
-        method: "POST",
-        path: `/credit/offers/${encodeURIComponent(action.offerId)}/supplier-payment`,
-        body: {
-          lender: action.lender,
-          supplierPaymentId: "<transaction-hash>"
-        }
-      }
+      afterSubmit: supplierPaymentCallback(action)
     } : undefined,
     transactionWarning: contract
       ? "The current Base Sepolia C402CreditIntent contract debits native testnet token from the lender agent wallet."
       : "C402_BASE_SEPOLIA_CREDIT_CONTRACT is not configured, so no transaction target is available."
+  };
+}
+
+function supplierPaymentCallback(action: ReturnType<AgentCreditService["lenderFundingActions"]>["actions"][number]): Record<string, unknown> {
+  return {
+    method: "POST",
+    path: `/credit/offers/${encodeURIComponent(action.offerId)}/supplier-payment`,
+    body: {
+      lender: action.lender,
+      supplierPaymentId: "<transaction-hash>"
+    }
   };
 }
 
@@ -908,7 +1087,7 @@ function asLenderProfileInput(body: Record<string, unknown>) {
     lenderId: typeof body.lenderId === "string" ? body.lenderId : undefined,
     agent: requiredString(body, "agent"),
     availableLiquidityAtomic: requiredString(body, "availableLiquidityAtomic"),
-    asset: typeof body.asset === "string" ? body.asset : undefined,
+    asset: typeof body.asset === "string" ? normalizeAsset(body.asset) : defaultCreditAsset(),
     networks: optionalStringArray(body, "networks")?.map(normalizeNetwork),
     minFeeBps: optionalNumber(body, "minFeeBps"),
     maxDurationSeconds: optionalNumber(body, "maxDurationSeconds"),
