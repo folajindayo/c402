@@ -55,7 +55,7 @@ const DOCS: Record<string, DocsPage> = {
     "maxDurationSeconds":86400,
     "acceptedRiskBands":["A","B"]
   }'</code></pre>
-      <p>Registration returns one session key and one Safe setup bundle per network. Use <code>assets</code> when networks use different tokens. c402 checks the selected Safe balance before matching.</p>
+      <p>Registration returns one session key and one Safe setup bundle per network. Use <code>assets</code> when networks use different tokens. The liquidity limit is shared across networks; c402 checks the selected Safe balance before matching.</p>
       <h2>3. Fund and inspect the Safe</h2>
       <pre><code>curl https://c402.site/lenders/0xLenderAgent/wallet</code></pre>
       <p>Fund each Safe with the network's gas token and lender asset. The lender agent signs setup transactions and pays gas.</p>

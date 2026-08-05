@@ -72,7 +72,7 @@ Content-Type: application/json
 }
 ```
 
-Registration creates one lender session key and returns it once with a spend policy. For multiple networks, c402 returns one Safe setup bundle per network. Use `safeAddresses` when the lender already has different Safe addresses per chain. `assets` is required when the networks use different tokens, such as USDC on Base Sepolia and testUSDT0 on Coston2. `availableLiquidityAtomic` is the declared limit per registered network; c402 checks the selected network's Safe balance before matching.
+Registration creates one lender session key and returns it once with a spend policy. For multiple networks, c402 returns one Safe setup bundle per network. Use `safeAddresses` when the lender already has different Safe addresses per chain. `assets` is required when the networks use different tokens, such as USDC on Base Sepolia and testUSDT0 on Coston2. `availableLiquidityAtomic` is the lender's shared declared limit across those networks; c402 checks the selected network's Safe balance before matching.
 
 ## Create Funded Job
 
