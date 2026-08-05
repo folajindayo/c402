@@ -18,13 +18,13 @@ type DocsPage = {
 const DOCS: Record<string, DocsPage> = {
   "/docs": {
     title: "c402 Documentation",
-    description: "Agent credit over HTTP: borrow, lend, repay, and liquidate through inspectable protocol flows.",
+    description: "Borrow to pay. Lend to earn. Repay from revenue.",
     body: `
       <h1>c402 Documentation</h1>
-      <p class="lead">c402 is a credit protocol for AI agents. It lets agents borrow to pay suppliers, while lenders receive a senior repayment claim against a verified source.</p>
+      <p class="lead">c402 lets agents borrow to pay suppliers. Lenders are repaid from the agent's revenue.</p>
       <h2>Start Here</h2>
       <div class="link-grid">
-        <a href="/docs/get-started"><strong>How to get started with c402</strong><span>Register a lender, create a borrower source, request credit, match, pay, repay.</span></a>
+        <a href="/docs/get-started"><strong>How to get started with c402</strong><span>Register, borrow, pay, and repay.</span></a>
         <a href="/docs/borrowers"><strong>Borrower agents</strong><span>How an agent borrows without receiving unrestricted funds.</span></a>
         <a href="/docs/lenders"><strong>Lender agents</strong><span>How idle agent balances become purpose-bound credit offers.</span></a>
         <a href="/docs/security"><strong>Security model</strong><span>Liens, hard recovery value, direct supplier payment, and liquidation.</span></a>
@@ -36,29 +36,29 @@ const DOCS: Record<string, DocsPage> = {
   },
   "/docs/get-started": {
     title: "How to get started with c402",
-    description: "A short agent-friendly guide to borrowing and lending through c402.",
+    description: "Register, borrow, pay, and repay.",
     body: `
       <h1>How to get started with c402</h1>
-      <p class="lead">Use c402 when an agent has work to do, needs to pay a supplier first, and has a verified repayment source.</p>
+      <p class="lead">An agent uses c402 when it must pay first and earn later.</p>
       <h2>1. Discover the service</h2>
       <pre><code>curl https://c402.site/.well-known/c402.json</code></pre>
-      <p>Agents should read the catalog before calling credit endpoints. The catalog lists supported products, networks, and endpoints.</p>
+      <p>Use the catalog to find supported networks, assets, and endpoints.</p>
       <h2>2. Register a lender agent</h2>
       <pre><code>curl -X POST https://c402.site/lenders/register \\
   -H 'content-type: application/json' \\
   -d '{
     "availableLiquidityAtomic":"25000000",
     "asset":"USDC",
+    "assets":{"base-sepolia":"USDC","flare-testnet":"USDT0"},
     "networks":["base-sepolia","flare-testnet"],
     "minFeeBps":300,
     "maxDurationSeconds":86400,
     "acceptedRiskBands":["A","B"]
   }'</code></pre>
-      <p>Registration creates a lender session key and returns it once with a policy. For enforced custody, pass a Safe address and enable the c402 Safe session module. <code>availableLiquidityAtomic</code> is the lender's declared c402 credit limit; Safe/session balance is read separately from <code>GET /lenders/{address}/wallet</code>.</p>
-      <p>At match time, c402 checks the generated wallet balance. If the balance is below the required supplier payment, that lender is skipped and the offer is assigned to the next eligible lender.</p>
+      <p>Registration returns one session key and one Safe setup bundle per network. Use <code>assets</code> when networks use different tokens. c402 checks the selected Safe balance before matching.</p>
       <h2>3. Fund and inspect the Safe</h2>
       <pre><code>curl https://c402.site/lenders/0xLenderAgent/wallet</code></pre>
-      <p>Fund the lender Safe with Base Sepolia ETH or USDC. When <code>C402_SAFE_SESSION_MODULE_CONTRACT</code>, <code>C402_SAFE_PROXY_FACTORY</code>, and <code>C402_SAFE_SINGLETON</code> are configured, registration returns a Safe deployment/setup bundle. The lender agent signs and sponsors gas for those transactions; c402 does not sponsor gas. No ZeroDev, Biconomy, bundler, or API key is required.</p>
+      <p>Fund each Safe with the network's gas token and lender asset. The lender agent signs setup transactions and pays gas.</p>
       <h2>4. Create or register a repayment source</h2>
       <p>For a funded job, create a job receivable. For asset, subscription, or earnings credit, register a backing source with hard liquidation value.</p>
       <pre><code>curl -X POST https://c402.site/credit/backing-sources \\
@@ -77,6 +77,8 @@ const DOCS: Record<string, DocsPage> = {
   -H 'content-type: application/json' \\
   -d '{
     "agent":"0xBorrowerAgent",
+    "network":"flare-testnet",
+    "asset":"USDT0",
     "productType":"asset-backed",
     "amountAtomic":"1000000",
     "purpose":"data",
@@ -322,7 +324,7 @@ COMPUTE-RECEIPT</code></pre>
 export function renderLanding(baseUrl: string): string {
   return pageShell({
     title: "c402",
-    description: "Purpose-bound credit for AI agents.",
+    description: "Borrow to pay. Repay from revenue.",
     body: `
       <main class="landing">
         <nav class="topbar">
@@ -336,8 +338,8 @@ export function renderLanding(baseUrl: string): string {
         <section class="hero">
           <div class="hero-inner">
             <p class="eyebrow">Credit for agentic commerce</p>
-            <h1>Purpose-bound credit for AI agents.</h1>
-            <p class="hero-copy">c402 lets agents borrow to pay APIs and suppliers, while lenders receive a senior claim against verified repayment sources.</p>
+            <h1>Borrow to pay. Repay from revenue.</h1>
+            <p class="hero-copy">c402 pays the supplier first, then repays the lender from the agent's earnings.</p>
             <div class="actions">
               <a class="button" href="https://docs.c402.site/docs/get-started">Start with c402</a>
               <a class="button secondary" href="/.well-known/c402.json">View service catalog</a>
@@ -355,6 +357,8 @@ export function renderLanding(baseUrl: string): string {
           <pre><code>POST /credit/request
 {
   "agent": "0xAgent",
+  "network": "base-sepolia",
+  "asset": "USDC",
   "productType": "job-backed",
   "amountAtomic": "1000000",
   "purpose": "data",

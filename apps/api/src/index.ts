@@ -257,7 +257,7 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
   return {
     protocol: "c402",
     name: "c402 Credit",
-    description: "Receivable-backed, purpose-bound credit for AI agents with automatic repayment from funded jobs.",
+      description: "Agents borrow to pay suppliers. Lenders are repaid from revenue.",
     baseUrl,
     status: {
       credit: "available",
@@ -277,85 +277,85 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
         method: "POST",
         path: "/credit/jobs",
         price: "free",
-        purpose: "Create a funded receivable for an agent job."
+        purpose: "Create a job that can repay credit."
       },
       {
         method: "POST",
         path: "/credit/backing-sources",
         price: "free",
-        purpose: "Register verified asset, subscription, or earnings backing plus hard liquidation value for non-job credit."
+        purpose: "Register a non-job repayment source."
       },
       {
         method: "POST",
         path: "/credit/request",
         price: "free",
-        purpose: "Request a purpose-bound advance against a job, asset, subscription, or earnings backing source."
+        purpose: "Request money to pay a supplier."
       },
       {
         method: "POST",
         path: "/lenders/register",
         price: "free",
-        purpose: "Register a lender and create a c402 lender session key. The key is returned once with a spend policy."
+        purpose: "Register a lender and receive a session key."
       },
       {
         method: "GET",
         path: "/lenders/wallets",
         price: "free",
-        purpose: "List registered lender wallets, balances, receivables, and pending supplier-payment actions."
+        purpose: "List lender wallets and balances."
       },
       {
         method: "GET",
         path: "/lenders/{lender}/wallet",
         price: "free",
-        purpose: "Inspect one lender wallet balance, receivables, shortfalls, advances, and pending actions."
+        purpose: "Inspect one lender wallet."
       },
       {
         method: "GET",
         path: "/lenders/{lender}/actions",
         price: "free",
-        purpose: "List pending supplier-payment transactions for a funded lender agent wallet."
+        purpose: "List supplier payments waiting for the lender."
       },
       {
         method: "POST",
         path: "/credit/match",
         price: "free",
-        purpose: "Match an approved credit offer to the best eligible lender agent."
+        purpose: "Match a request to an eligible lender."
       },
       {
         method: "POST",
         path: "/credit/dispatch",
         price: "free",
-        purpose: "Expire missed lender leases and rematch pending offers to the next eligible lender."
+        purpose: "Retry missed lender matches."
       },
       {
         method: "POST",
         path: "/credit/jobs/{jobId}/collateral",
         price: "free",
-        purpose: "Post borrower or sponsor collateral that can be liquidated if repayment terms are broken."
+        purpose: "Lock collateral for a job."
       },
       {
         method: "POST",
         path: "/credit/offers/{offerId}/supplier-payment",
         price: "free",
-        purpose: "Record a lender-to-supplier x402 payment before repayment is claimed from the receivable."
+        purpose: "Record the supplier payment."
       },
       {
         method: "POST",
         path: "/credit/jobs/{jobId}/complete",
         price: "free",
-        purpose: "Complete a job and route repayment before agent proceeds."
+        purpose: "Complete the job and repay the lender."
       },
       {
         method: "POST",
         path: "/credit/advances/{advanceId}/repay",
         price: "free",
-        purpose: "Repay any active credit advance from its pledged backing source."
+        purpose: "Repay an active advance."
       },
       {
         method: "POST",
         path: "/credit/advances/{advanceId}/liquidate",
         price: "free",
-        purpose: "Liquidate locked collateral and reserve after missed deadline or default."
+        purpose: "Recover funds after default."
       },
       {
         method: "POST",
@@ -363,7 +363,7 @@ function serviceCatalog(baseUrl: string): Record<string, unknown> {
         price: env("C402_PRICE_USD") ?? "0.10",
         payment: "x402",
         enabled: computeEnabled,
-        purpose: "Optional confidential credit scoring over c402 Compute."
+        purpose: "Score credit privately when FCC is enabled."
       }
     ]
   };
@@ -592,7 +592,7 @@ async function registerLender(body: Record<string, unknown>): Promise<Record<str
     },
     safeAccount,
     safeAccounts,
-    warning: "The recovery and session private keys are returned once and are not stored by c402. Use a Safe with the c402 module for onchain-enforced session limits."
+    warning: "Keys are returned once and are not stored. Submit each Safe setup bundle before funding it."
   };
 }
 
@@ -696,7 +696,7 @@ function createSafeAccountPlan(input: {
       token: tokenForAsset(input.asset),
       spendLimitAtomic: input.spendLimitAtomic,
       expiresAt,
-      note: "Deploy C402SafeSessionModule and set C402_SAFE_SESSION_MODULE_CONTRACT to enable Safe-enforced lender sessions."
+      note: `Safe session module is not configured for ${network.name}.`
     };
   }
 
@@ -714,7 +714,7 @@ function createSafeAccountPlan(input: {
         token: tokenForAsset(input.asset),
         spendLimitAtomic: input.spendLimitAtomic,
         expiresAt,
-        note: "Set C402_SAFE_PROXY_FACTORY and C402_SAFE_SINGLETON so /lenders/register can return a Safe deployment transaction sponsored by the lender agent."
+        note: `Safe deployment addresses are not configured for ${network.name}.`
       };
     }
     const initializer = encodeFunctionData({
@@ -785,8 +785,8 @@ function createSafeAccountPlan(input: {
     expiresAt,
     setupTransactions,
     note: input.safeAddress
-      ? "Execute setupTransactions through the Safe. The session signer can then only call c402 paySupplier through the Safe module."
-      : "The lender agent sponsors Safe deployment, then the Safe owner executes the module enable/configuration transactions. Replace the placeholder Safe address with the factory-emitted proxy address."
+      ? `Submit the setup transactions on ${network.name}. The session signer can then call only c402 supplier payments.`
+      : `The lender agent submits Safe deployment and pays gas. Then the Safe owner enables and configures the c402 module on ${network.name}.`
   };
 }
 
@@ -809,7 +809,7 @@ function lenderSessionPolicy(lender: ReturnType<AgentCreditService["registerLend
       }
     ],
     enforcement: safeAccount.status === "ready" ? "safe-module" : "safe-module-pending",
-    mainnetTarget: "Use a Safe owned by the lender and enable the c402 session module. No hosted bundler or provider API key is required."
+    custody: "Safe module enforced; lender funds remain in the Safe."
   };
 }
 
@@ -974,7 +974,7 @@ function withFundingTransaction(action: ReturnType<AgentCreditService["lenderFun
     return {
       ...action,
       transaction: undefined,
-      transactionWarning: "USDC funding requires C402_SAFE_SESSION_MODULE_CONTRACT so the Safe module can approve and call paySupplierToken."
+      transactionWarning: `Token funding on ${network.name} requires its c402 Safe session module.`
     };
   }
   return {
@@ -1007,8 +1007,8 @@ function withFundingTransaction(action: ReturnType<AgentCreditService["lenderFun
       afterSubmit: supplierPaymentCallback(action)
     } : undefined,
     transactionWarning: contract
-      ? "The current Base Sepolia C402CreditIntent contract debits native testnet token from the lender agent wallet."
-      : "C402_BASE_SEPOLIA_CREDIT_CONTRACT is not configured, so no transaction target is available."
+      ? `${network.name} C402CreditIntent debits the network's native test token from the lender Safe.`
+      : `C402CreditIntent is not configured for ${network.name}.`
   };
 }
 
