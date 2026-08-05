@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { C402Error, type CreditProductType, type Purpose } from "@c402/protocol";
 import { createFccAdapterFromEnv } from "@c402/fcc-adapter";
 import { AgentCreditService, ConfidentialPaymentService, createConfigFromEnv } from "@c402/server";
-import { concatHex, createPublicClient, encodeFunctionData, encodePacked, getCreate2Address, http, isAddress, keccak256, toBytes, type Hex } from "viem";
+import { createPublicClient, encodeFunctionData, encodePacked, getCreate2Address, http, isAddress, keccak256, toBytes, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import {
   flareX402Asset,
@@ -766,7 +766,7 @@ async function createSafeAccountPlan(input: {
       predictedSafeAddress = getCreate2Address({
         from: safeProxyFactory as Hex,
         salt,
-        bytecodeHash: keccak256(concatHex([proxyCreationCode, safeSingleton as Hex]))
+        bytecodeHash: keccak256(encodePacked(["bytes", "uint256"], [proxyCreationCode, BigInt(safeSingleton)]))
       });
     } catch {
       predictedSafeAddress = undefined;
