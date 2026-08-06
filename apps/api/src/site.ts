@@ -332,7 +332,7 @@ export function renderLanding(baseUrl: string): string {
     body: `
       <main class="landing">
         <nav class="topbar">
-          <a class="brand" href="/">c402</a>
+          <a class="brand" href="/" aria-label="c402 home"><img src="/c402-logo.png" alt="c402"></a>
           <div>
             <a href="https://docs.c402.site">Docs</a>
             <a href="/dashboard">Dashboard</a>
@@ -424,7 +424,7 @@ export function renderLanding(baseUrl: string): string {
           <details><summary>What can lenders liquidate?</summary><p>Each loan requires a repayment source and hard recovery value: job escrow, posted collateral, asset value, escrowed receipts, reserves, or bonds.</p></details>
         </section>
         <footer>
-          <span>c402</span>
+          <img class="footer-logo" src="/c402-logo.png" alt="c402">
           <a href="${baseUrl}/llms.txt">llms.txt</a>
           <a href="https://docs.c402.site">Docs</a>
           <a href="/dashboard">Dashboard</a>
@@ -442,7 +442,7 @@ export function renderDocs(pathname: string): string {
     body: `
       <div class="docs-layout">
         <aside>
-          <a class="brand" href="/">c402</a>
+          <a class="brand" href="/" aria-label="c402 home"><img src="/c402-logo.png" alt="c402"></a>
           <nav>${DOCS_NAV.map(([label, href]) => `<a class="${href === pathname ? "active" : ""}" href="${href}">${label}</a>`).join("")}</nav>
         </aside>
         <article class="docs-content">
@@ -500,6 +500,8 @@ function pageShell(input: { title: string; description: string; body: string }):
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="${escapeHtml(input.description)}">
+  <link rel="icon" type="image/png" sizes="256x256" href="/c402-favicon.png">
+  <link rel="apple-touch-icon" href="/c402-favicon.png">
   <title>${escapeHtml(input.title)}</title>
   <style>${CSS}</style>
 </head>
@@ -532,7 +534,8 @@ pre { margin: 0; padding: 20px; background: #f0f0f0; overflow: auto; border: 1px
 code { font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px; }
 .landing { max-width: 1120px; margin: 0 auto; padding: 28px 28px 0; }
 .topbar { display: flex; justify-content: space-between; align-items: center; min-height: 48px; border-bottom: 1px solid var(--line); }
-.brand { font-size: 36px; font-weight: 700; letter-spacing: 0; }
+.brand { display: inline-flex; align-items: center; width: 112px; height: 48px; }
+.brand img { display: block; width: 112px; height: auto; }
 .topbar div { display: flex; gap: 24px; font-size: 13px; text-transform: uppercase; }
 .hero { display: flex; justify-content: center; padding: 76px 0 56px; text-align: center; }
 .hero-inner { width: min(100%, 820px); }
@@ -562,9 +565,10 @@ h2 { margin: 0 0 18px; font-family: Georgia, "Times New Roman", serif; font-size
 details { border-bottom: 1px solid var(--line); padding: 22px 0; }
 summary { cursor: pointer; font-family: Georgia, "Times New Roman", serif; font-size: 26px; }
 footer { display: flex; gap: 24px; justify-content: center; padding: 36px 0; background: #171717; color: #aaa; margin: 0 -28px; }
+.footer-logo { width: 72px; height: auto; object-fit: contain; filter: grayscale(1) brightness(0) invert(1); }
 .docs-layout { display: grid; grid-template-columns: 260px minmax(0, 760px) 180px; gap: 42px; max-width: 1240px; margin: 0 auto; padding: 28px; }
 aside { position: sticky; top: 24px; align-self: start; height: calc(100vh - 48px); border-right: 1px solid var(--line); padding-right: 22px; }
-aside .brand { display: block; margin-bottom: 30px; }
+aside .brand { display: flex; margin-bottom: 30px; }
 aside nav { display: grid; gap: 6px; }
 aside nav a { padding: 8px 10px; color: var(--muted); border-radius: 4px; font-size: 14px; }
 aside nav a.active, aside nav a:hover { color: var(--text); background: var(--soft); }
